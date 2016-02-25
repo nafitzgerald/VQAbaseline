@@ -53,7 +53,8 @@ function initial_params()
     
     -- parameters for general setting
     cmd:option('--savepath', 'model')
-    cmd:option('--savetag', 'BOWIMG')
+    cmd:option('--savetag', 'tg1_nolambda')
+    cmd:option('--inputrep', 'tg1_nolambda')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -100,8 +101,9 @@ function runTrainVal()
     local step_trainall = false --  step for combining train2014 and val2014
     local opt = initial_params()
     opt.method = method
+    opt.savetag = method .. '_' .. opt.inputrep
     opt.save = paths.concat(opt.savepath, opt.savetag ..'.t7')
-    local best_model_save_path = paths.concat(opt.savepat, opt.savetag .. '_BEST.t7')
+    local best_model_save_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
 
     local stat = {}
     -- load data inside
@@ -137,8 +139,9 @@ function runTrainVal()
             -- Adjust the learning rate 
             adjust_learning_rate(i, opt, config_layers)
             if acc > best_acc then
-                print('Saving best model (epoch ' .. i .. ')')
+                print('Saving best model (epoch ' .. i .. ') - Acc: ' .. acc)
                 save_model(opt, manager_vocab, context, best_model_save_path)
+                best_acc = acc
             end
         end
     end
@@ -201,9 +204,10 @@ function runTest()
     --load the pre-trained model then evaluate on the test set then generate the csv file that could be submitted to the evaluation server
     local method = 'BOWIMG'
     --local model_path = 'model/BOWIMG.t7'
-    local model_path = paths.concat(opt.savepat, opt.savetag .. '_BEST.t7')
-    local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
     local opt = initial_params()
+    opt.savetag = method .. '_' .. opt.inputrep
+    local model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
+    local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
     opt.method = method
 
     -- load pre-trained model 
