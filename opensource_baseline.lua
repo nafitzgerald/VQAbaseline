@@ -53,6 +53,7 @@ function initial_params()
     
     -- parameters for general setting
     cmd:option('--savepath', 'model')
+    cmd:option('--savetag', 'BOWIMG')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -96,10 +97,11 @@ end
 function runTrainVal()
     local method = 'BOWIMG'
     local step_trainval = true --  step for train and valiaton
-    local step_trainall = true --  step for combining train2014 and val2014
+    local step_trainall = false --  step for combining train2014 and val2014
     local opt = initial_params()
     opt.method = method
-    opt.save = paths.concat(opt.savepath, method ..'.t7')
+    opt.save = paths.concat(opt.savepath, opt.savetag ..'.t7')
+    local best_model_save_path = paths.concat(opt.savepat, opt.savetag .. '_BEST.t7')
 
     local stat = {}
     -- load data inside
@@ -124,6 +126,7 @@ function runTrainVal()
             grad_last = grad_last
         }
         print(params_current)
+    local best_acc = 0
         print('start training ...')
         for i = 1, opt.epochs do
             print(method .. ' epoch '..i)
@@ -133,6 +136,10 @@ function runTrainVal()
             stat[i] = {acc, perfs.most_freq, perfs.openend_overall, perfs.multiple_overall}
             -- Adjust the learning rate 
             adjust_learning_rate(i, opt, config_layers)
+            if acc > best_acc then
+                print('Saving best model (epoch ' .. i .. ')')
+                save_model(opt, manager_vocab, context, best_model_save_path)
+            end
         end
     end
     
@@ -193,7 +200,8 @@ end
 function runTest()
     --load the pre-trained model then evaluate on the test set then generate the csv file that could be submitted to the evaluation server
     local method = 'BOWIMG'
-    local model_path = 'model/BOWIMG.t7'
+    --local model_path = 'model/BOWIMG.t7'
+    local model_path = paths.concat(opt.savepat, opt.savetag .. '_BEST.t7')
     local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
     local opt = initial_params()
     opt.method = method
@@ -217,8 +225,8 @@ function runTest()
     local pred, prob, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
     
     -- output to csv file to be submitted to the VQA evaluation server
-    local file_json_openend = 'result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. method .. '_results.json'
-    local file_json_multiple = 'result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. method .. '_results.json'
+    local file_json_openend = 'result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
+    local file_json_multiple = 'result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
     local choice = 0   
     outputJSONanswer(state_test, manager_vocab, prob, file_json_openend, choice)

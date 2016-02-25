@@ -146,10 +146,10 @@ function load_visualqadataset(opt, dataType, manager_vocab)
    
     -- VQA question/answer txt files.
     -- Download data_vqa_feat.zip and data_vqa_txt.zip and decompress into this folder
-    local path_dataset = '/data/vision/oliva/scenedataset/vqa_cache/'
+    local path_dataset = 'data/'
     
     local prefix = 'coco_' .. dataType 
-    local filename_question = paths.concat(path_dataset, prefix .. '_question.txt')
+    local filename_question = paths.concat(path_dataset, prefix .. '_tripwords.txt')
     local filename_answer = paths.concat(path_dataset, prefix .. '_answer.txt')
     local filename_imglist = paths.concat(path_dataset, prefix .. '_imglist.txt')
     local filename_allanswer = paths.concat(path_dataset, prefix .. '_allanswer.txt')
