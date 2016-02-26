@@ -128,7 +128,7 @@ function runTrainVal()
             grad_last = grad_last
         }
         print(params_current)
-    local best_acc = 0
+    local best_score = 0
         print('start training ...')
         for i = 1, opt.epochs do
             print(method .. ' epoch '..i)
@@ -138,10 +138,11 @@ function runTrainVal()
             stat[i] = {acc, perfs.most_freq, perfs.openend_overall, perfs.multiple_overall}
             -- Adjust the learning rate 
             adjust_learning_rate(i, opt, config_layers)
-            if acc > best_acc then
-                print('Saving best model (epoch ' .. i .. ') - Acc: ' .. acc)
+            local score = perfs.openend_overall
+            if score > best_score then
+                print('Saving best model (epoch ' .. i .. ') - Acc: ' .. score)
                 save_model(opt, manager_vocab, context, best_model_save_path)
-                best_acc = acc
+                best_score = score
             end
         end
     end
