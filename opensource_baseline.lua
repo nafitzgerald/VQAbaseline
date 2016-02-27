@@ -101,7 +101,9 @@ function runTrainVal()
     local step_trainall = false --  step for combining train2014 and val2014
     local opt = initial_params()
     opt.method = method
-    opt.savetag = method .. '_' .. opt.inputrep
+    if opt.savetag == nil or opt.savetag == '' then
+        opt.savetag = method .. '_' .. opt.inputrep
+    end
     opt.save = paths.concat(opt.savepath, opt.savetag ..'.t7')
     local best_model_save_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
 
@@ -206,7 +208,9 @@ function runTest()
     local method = 'BOWIMG'
     --local model_path = 'model/BOWIMG.t7'
     local opt = initial_params()
-    opt.savetag = method .. '_' .. opt.inputrep
+    if opt.savetag == nil or opt.savetag == '' then
+        opt.savetag = method .. '_' .. opt.inputrep
+    end
     local model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
     local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
     opt.method = method
