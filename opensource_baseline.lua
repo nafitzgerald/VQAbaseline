@@ -55,6 +55,7 @@ function initial_params()
     cmd:option('--savepath', 'model')
     cmd:option('--savetag', 'tg1_nolambda')
     cmd:option('--inputrep', 'tg1_nolambda')
+    cmd:option('--recoverfrom', '')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -112,8 +113,19 @@ function runTrainVal()
     if step_trainval then 
         local state_train, manager_vocab = load_visualqadataset(opt, 'trainval2014_train', nil)
         local state_val, _ = load_visualqadataset(opt, 'trainval2014_val', manager_vocab)
-        local model, criterion = build_model(opt, manager_vocab)
-        local paramx, paramdx = model:getParameters()
+
+	local model, criterion, paramx, paramdx
+        if opt.recoverfrom == nil or opt.recoverfrom == '' then
+            model, criterion = build_model(opt, manager_vocab)
+            paramx, paramdx = model:getParameters()
+        else
+            print("Recovering from: " .. opt.recoverfrom)
+            local f_model = torch.load(opt.recoverfrom)
+            manager_vocab = f_model.manager_vocab 
+            model, criterion = build_model(opt, manager_vocab)
+            paramx, paramdx = model:getParameters()
+            paramx:copy(f_model.paramx)
+        end
         local params_current, gparams_current = model:parameters()
 
         local config_layers, grad_last = config_layer_params(opt, params_current, gparams_current, 1)
