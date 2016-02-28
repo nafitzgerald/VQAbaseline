@@ -136,7 +136,6 @@ function build_vocab(data, thresh, IDX_singleline, IDX_includeEnd)
         end 
     end
     vocab_map_['END'] = -1
-    debugger.enter()
     return vocab_map_, ivocab_map_, vocab_idx
 end
 
@@ -423,6 +422,7 @@ function outputJSONanswer(state, manager_vocab, pred, pred_multi, file_json, cho
         if choice == 1 then
             answer_pred = word_pred_answer_multiple
         end
+    
         local questionID = state.data_questionID[i]
         f_json:write('{"answer": "' .. answer_pred .. '","question_id": ' .. questionID .. '}')
         if i< pred:size(1) then
@@ -461,8 +461,12 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local nBatch = 0
 
     local randIDX = torch.randperm(state.x_question:size(1))
+    if updateIDX == 'test' then
+        randIDX = torch.range(1,state.x_question:size(1))
+    end
     for iii = 1, state.x_question:size(1) do
         local i = randIDX[iii]
+
         local first_answer = -1
         if updateIDX~='test' then
             first_answer = state.x_answer[i]
@@ -527,13 +531,14 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
                     for n = 1, #choices do
                         local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
                         if IDX_pred ~= nil then
-                        local score = prob_batch[{idx, IDX_pred}]
-                        if score ~= nil then
-                            score_choices[n] = score
+                            local score = prob_batch[{j, IDX_pred}]
+                            if score ~= nil then
+                                score_choices[n] = score
+                            end
                         end
                     end
                     local val_max, IDX_max = torch.max(score_choices, 1)
-                    pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max]]
+                    pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
                     pred_answer[idx] = i_max[j]
                 end
      
@@ -587,7 +592,6 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     -- 1 epoch finished
     if updateIDX~='test' then
         local gtAnswer = state.x_answer:clone()
-        gtAnswer = gtAnswer:long()
         local correctNum = torch.sum(torch.eq(pred_answer, gtAnswer))
         acc = correctNum*1.0/pred_answer:size(1)
     else

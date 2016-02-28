@@ -53,8 +53,8 @@ function initial_params()
     
     -- parameters for general setting
     cmd:option('--savepath', 'model')
-    cmd:option('--savetag', 'tg1_nolambda')
-    cmd:option('--inputrep', 'tg1_nolambda')
+    cmd:option('--savetag', 'BOWIMG')
+    cmd:option('--inputrep', 'question')
     cmd:option('--recoverfrom', '')
 
     -- parameters for the visual feature
