@@ -243,20 +243,19 @@ function runTest()
         criterion = criterion,
     }
     -- predict 
-    local pred, prob, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
+    local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
     
     -- output to csv file to be submitted to the VQA evaluation server
     local file_json_openend = 'result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
     local file_json_multiple = 'result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
     local choice = 0   
-    outputJSONanswer(state_test, manager_vocab, prob, file_json_openend, choice)
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice)
     print('output the MultipleChoice prediction to JSON file...'..file_json_multiple) 
     choice = 1
-    outputJSONanswer(state_test, manager_vocab, prob, file_json_multiple, choice)
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_multiple, choice)
 
     collectgarbage()
-
 end
 
 runTrainVal()
