@@ -234,7 +234,6 @@ function runTest()
     local paramx, paramdx = model:getParameters()
     paramx:copy(f_model.paramx)
 
-
     -- load test data
     local state_test, _ = load_visualqadataset(opt, testSet, manager_vocab)
 
@@ -246,8 +245,8 @@ function runTest()
     local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
     
     -- output to csv file to be submitted to the VQA evaluation server
-    local file_json_openend = 'result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
-    local file_json_multiple = 'result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
+    local file_json_openend = '/tmp/result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
+    local file_json_multiple = '/tmp/result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
     local choice = 0   
     outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice)
@@ -258,5 +257,5 @@ function runTest()
     collectgarbage()
 end
 
-runTrainVal()
+--runTrainVal()
 runTest()
