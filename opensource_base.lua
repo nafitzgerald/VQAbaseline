@@ -153,7 +153,8 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     local filename_answer = paths.concat(path_dataset, prefix .. '_answer.txt')
     local filename_imglist = paths.concat(path_dataset, prefix .. '_imglist.txt')
     local filename_allanswer = paths.concat(path_dataset, prefix .. '_allanswer.txt')
-    local filename_choice = paths.concat(path_dataset, prefix .. '_choice.txt')
+    local filename_choice_tag = paths.concat(path_dataset, prefix .. '_choice_tag.txt')
+    local filename_choice_map = paths.concat(path_dataset, prefix .. '_choice_map.txt')
     local filename_question_type = paths.concat(path_dataset, prefix .. '_question_type.txt')
     local filename_answer_type = paths.concat(path_dataset, prefix .. '_answer_type.txt')
     local filename_questionID = paths.concat(path_dataset, prefix .. '_questionID.txt')
@@ -162,9 +163,21 @@ function load_visualqadataset(opt, dataType, manager_vocab)
         data_allanswer = file.read(filename_allanswer)
         data_allanswer = stringx.split(data_allanswer,'\n')
     end
-    if existfile(filename_choice) then
-        data_choice = file.read(filename_choice)
-        data_choice = stringx.split(data_choice, '\n')
+    if existfile(filename_choice_tag) then
+        data_choice_tag = file.read(filename_choice_tag)
+        data_choice_tag = stringx.split(data_choice_tag, '\n')
+    end
+    data_choice_map = {}
+    if existfile(filename_choice_map) then
+        data_choice_map_lines = file.read(filename_choice_map)
+        data_choice_map_lines = stringx.split(data_choice_map_lines, '\n')
+
+        for i, line in pairs(data_choice_map_lines) do
+            if line ~= '' then
+                local split = stringx.split(line, "\t")
+                data_choice_map[split[1]] = split[2] 
+            end
+        end
     end
     if existfile(filename_question_type) then
         data_question_type = file.read(filename_question_type)
@@ -290,7 +303,8 @@ function load_visualqadataset(opt, dataType, manager_vocab)
         imglist = imglist, 
         path_imglist = path_imglist, 
         data_allanswer = data_allanswer, 
-        data_choice = data_choice, 
+        data_choice_tag = data_choice_tag, 
+        data_choice_map = data_choice_map,
         data_question_type = data_question_type, 
         data_answer_type = data_answer_type, 
         data_questionID = data_questionID
@@ -526,7 +540,8 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
                 i_max = torch.squeeze(i_max)
                 for j = 1, opt.batchsize do
                     local idx = IDXset_batch[j]
-                    local choices = stringx.split(state.data_choice[idx], ',')
+                    local choice_tag = state.data_choice_tag[idx]
+                    local choices = stringx.split(state.data_choice_map[choice_tag], ',')
                     local score_choices = torch.zeros(#choices):fill(-1000000)
                     for n = 1, #choices do
                         local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
