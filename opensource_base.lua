@@ -434,6 +434,88 @@ function outputJSONanswer(state, manager_vocab, pred, pred_multi, file_json, cho
 
 end
 
+function new_batch(opt, manager_vocab) 
+    local batch = {}
+    batch = {}
+    batch.IDXset_batch = torch.zeros(opt.batchsize)
+    batch.target = torch.zeros(opt.batchsize)
+    batch.word_idx = torch.zeros(opt.batchsize, opt.seq_length)
+    batch.featBatch_word = torch.zeros(opt.batchsize, manager_vocab.nvocab_question)
+    batch.featBatch_visual = torch.zeros(opt.batchsize, opt.vdim)
+    return batch
+end
+
+function make_batches(opt, state, manager_vocab, updateIDX)
+    local n = state.x_question:size(1)
+    local randIDX = torch.randperm(n)
+    if updateIDX == 'test' then
+        randIDX = torch.range(1, n)
+    end
+
+    local nSample_batch = 0
+    local dataset = {}
+    dataset.size = n
+    dataset.batches = {}
+    dataset.batchSize = opt.batchsize
+
+    local nBatch = 1
+    for iii = 1, n do
+        if currBatch == nil then
+            currBatch = new_batch(opt, manager_vocab)
+        end
+
+        local i = randIDX[iii]
+
+        local first_answer = -1
+        if updateIDX~='test' then
+            first_answer = state.x_answer[i]
+        end
+        if first_answer == -1 and updateIDX == 'train' then
+            --skip the sample with NA answer
+        else
+            nSample_batch = nSample_batch + 1
+            currBatch.IDXset_batch[nSample_batch] = i
+            if updateIDX ~= 'test' then
+                currBatch.target[nSample_batch] = state.x_answer[i]
+            end
+            local filename = state.imglist[i]--'COCO_train2014_000000000092'
+            local feat_visual = state.featureMap[filename]:clone()
+            local feat_word = bagofword(manager_vocab, state.x_question[i])
+
+            currBatch.word_idx[nSample_batch] = state.x_question[i]
+            currBatch.featBatch_word[nSample_batch] = feat_word:clone()
+            currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+                
+            while iii == state.x_question:size(1) and nSample_batch< opt.batchsize do
+                -- padding the extra sample to complete a batch for training
+                nSample_batch = nSample_batch+1
+                currBatch.IDXset_batch[nSample_batch] = i
+                currBatch.target[nSample_batch] = first_answer
+                currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+                currBatch.featBatch_word[nSample_batch] = feat_word:clone()
+                currBatch.word_idx[nSample_batch] = state.x_question[i]
+            end 
+            if nSample_batch == opt.batchsize then                
+                nBatch = nBatch+1
+                nSample_batch = 0
+                table.insert(dataset.batches, currBatch)
+                currBatch = nil
+            end
+        end
+    end
+
+    -- put all on GPU
+    for _, batch in pairs(dataset.batches) do
+        batch.IDXset_batch = batch.IDXset_batch:cuda()
+        batch.target = batch.target:cuda()
+        batch.word_idx = batch.word_idx:cuda()
+        batch.featBatch_visual = batch.featBatch_visual:cuda()
+        batch.featBatch_word = batch.featBatch_word:cuda()
+    end
+
+    return dataset
+end -- make_batches
+
 function train_epoch(opt, state, manager_vocab, context, updateIDX)
     -- Dump context to the local namespace.
     local model = context.model
@@ -446,152 +528,108 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local grad_last = context.grad_last
  
     local loss = 0.0
-    local N = math.ceil(state.x_question:size(1) / opt.batchsize)
-    local pred_answer = torch.zeros(state.x_question:size(1))
-    local pred_answer_multi = torch.zeros(state.x_question:size(1))
-    local target = torch.zeros(opt.batchsize)
+    local pred_answer = torch.zeros(state.x_question:size(1)):cuda()
+    local pred_answer_multi = torch.zeros(state.x_question:size(1)):cuda()
 
-    local featBatch_visual = torch.zeros(opt.batchsize, opt.vdim)
-    local featBatch_word = torch.zeros(opt.batchsize, manager_vocab.nvocab_question)
-    local word_idx = torch.zeros(opt.batchsize, opt.seq_length)
-
-    local IDXset_batch = torch.zeros(opt.batchsize)
-    local nSample_batch = 0
     local count_batch = 0
     local nBatch = 0
 
-    local randIDX = torch.randperm(state.x_question:size(1))
-    if updateIDX == 'test' then
-        randIDX = torch.range(1,state.x_question:size(1))
-    end
-    for iii = 1, state.x_question:size(1) do
-        local i = randIDX[iii]
-
-        local first_answer = -1
-        if updateIDX~='test' then
-            first_answer = state.x_answer[i]
+    local last_tick = os.clock()
+    for _, batch in pairs(state.dataset.batches) do
+       if opt.method == 'BOW' then
+            input = batch.featBatch_word
+        elseif opt.method == 'BOWIMG' then
+            input = {batch.featBatch_word, batch.featBatch_visual}
+        elseif opt.method == 'IMG' then
+            input = batch.featBatch_visual
+        else 
+            print('error baseline method \n')
         end
-        if first_answer == -1 and updateIDX == 'train' then
-            --skip the sample with NA answer
-        else
-            nSample_batch = nSample_batch + 1
-            IDXset_batch[nSample_batch] = i
-            if updateIDX ~= 'test' then
-                target[nSample_batch] = state.x_answer[i]
-            end
-            local filename = state.imglist[i]--'COCO_train2014_000000000092'
-            local feat_visual = state.featureMap[filename]:clone()
-            local feat_word = bagofword(manager_vocab, state.x_question[i])
 
-            word_idx[nSample_batch] = state.x_question[i]
-            featBatch_word[nSample_batch] = feat_word:clone()
-            featBatch_visual[nSample_batch] = feat_visual:clone()
-                
-            while i == state.x_question:size(1) and nSample_batch< opt.batchsize do
-                -- padding the extra sample to complete a batch for training
-                nSample_batch = nSample_batch+1
-                IDXset_batch[nSample_batch] = i
-                target[nSample_batch] = first_answer
-                featBatch_visual[nSample_batch] = feat_visual:clone()
-                featBatch_word[nSample_batch] = feat_word:clone()
-                word_idx[nSample_batch] = state.x_question[i]
-            end 
-            if nSample_batch == opt.batchsize then                
-                nBatch = nBatch+1
-                word_idx = word_idx:cuda()
-                nSample_batch = 0
-                target = target:cuda()
-                featBatch_word = featBatch_word:cuda()
-                featBatch_visual = featBatch_visual:cuda()
-                ----------forward pass----------------------
-                --switch between the baselines and the memn2n
-                if opt.method == 'BOW' then
-                    input = featBatch_word
-                elseif opt.method == 'BOWIMG' then
-                    input = {featBatch_word, featBatch_visual}
-                elseif opt.method == 'IMG' then
-                    input = featBatch_visual
-                else 
-                    print('error baseline method \n')
-                end
+        local output = model:forward(input)
+        local err = criterion:forward(output, batch.target)
+        local prob_batch = output:float()
 
-                local output = model:forward(input)
-                local err = criterion:forward(output, target)
-                local prob_batch = output:float()
+        loss = loss + err
 
-                loss = loss + err
-
-                -- Compute accuracy for multiple choices.
-                local y_max, i_max = torch.max(prob_batch,2)
-                i_max = torch.squeeze(i_max)
-                for j = 1, opt.batchsize do
-                    local idx = IDXset_batch[j]
-                    local choices = stringx.split(state.data_choice[idx], ',')
-                    local score_choices = torch.zeros(#choices):fill(-1000000)
-                    for n = 1, #choices do
-                        local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
-                        if IDX_pred ~= nil then
-                            local score = prob_batch[{j, IDX_pred}]
-                            if score ~= nil then
-                                score_choices[n] = score
-                            end
-                        end
+        -- Compute accuracy for multiple choices.
+        local y_max, i_max = torch.max(prob_batch,2)
+        i_max = torch.squeeze(i_max)
+        for j = 1, opt.batchsize do
+            local idx = batch.IDXset_batch[j]
+            local choices = stringx.split(state.data_choice[idx], ',')
+            local score_choices = torch.zeros(#choices):fill(-1000000)
+            for n = 1, #choices do
+                local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
+                if IDX_pred ~= nil then
+                    local score = prob_batch[{j, IDX_pred}]
+                    if score ~= nil then
+                        score_choices[n] = score
                     end
-                    local val_max, IDX_max = torch.max(score_choices, 1)
-                    pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
-                    pred_answer[idx] = i_max[j]
-                end
-     
-                --------------------backforward pass
-                if updateIDX == 'train' then
-                    model:zeroGradParameters()
-                    local df = criterion:backward(output, target)
-                    local df_model = model:backward(input, df)
-
-                    -------------Update the params of baseline softmax---
-                    if opt.uniformLR ~= 1 then
-                        for i=1, #params_current do
-                            local gnorm = gparams_current[i]:norm()
-                            if config_layers.gradientClips[i]>0 and gnorm > config_layers.gradientClips[i] then
-                                gparams_current[i]:mul(config_layers.gradientClips[i]/gnorm)
-                            end
-
-                            grad_last[i]:mul(config_layers.moments[i])
-                            local tmp = torch.mul(gparams_current[i],-config_layers.lr_rates[i])
-                            grad_last[i]:add(tmp)
-                            params_current[i]:add(grad_last[i])
-                            if config_layers.weightRegConsts[i]>0 then
-                                local a = config_layers.lr_rates[i] * config_layers.weightRegConsts[i]
-                                params_current[i]:mul(1-a)
-                            end
-                            local pnorm = params_current[i]:norm()
-                            if config_layers.weightClips[i]>0 and pnorm > config_layers.weightClips[i] then
-                                params_current[i]:mul(config_layers.weightClips[i]/pnorm)
-                            end
-                        end
-                    else
-                        local norm_dw = paramdx:norm()
-                        if norm_dw > opt.max_gradientnorm then
-                            local shrink_factor = opt.max_gradientnorm / norm_dw
-                            paramdx:mul(shrink_factor)
-                        end
-                        paramx:add(g_paramdx:mul(-opt.lr))
-                    end
- 
-                end
-
-                --batch finished
-                count_batch = count_batch+1
-                if count_batch == 120 then
-                    collectgarbage()
-                    count_batch = 0
                 end
             end
-        end-- end of the pass sample with -1 answer IDX
+            local val_max, IDX_max = torch.max(score_choices, 1)
+            pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
+            pred_answer[idx] = i_max[j]
+        end
+
+        --------------------backforward pass
+        if updateIDX == 'train' then
+            model:zeroGradParameters()
+            local df = criterion:backward(output, batch.target)
+            local df_model = model:backward(input, df)
+
+            -------------Update the params of baseline softmax---
+            if opt.uniformLR ~= 1 then
+                for i=1, #params_current do
+                    local gnorm = gparams_current[i]:norm()
+                    if config_layers.gradientClips[i]>0 and gnorm > config_layers.gradientClips[i] then
+                        gparams_current[i]:mul(config_layers.gradientClips[i]/gnorm)
+                    end
+
+                    grad_last[i]:mul(config_layers.moments[i])
+                    local tmp = torch.mul(gparams_current[i],-config_layers.lr_rates[i])
+                    grad_last[i]:add(tmp)
+                    params_current[i]:add(grad_last[i])
+                    if config_layers.weightRegConsts[i]>0 then
+                        local a = config_layers.lr_rates[i] * config_layers.weightRegConsts[i]
+                        params_current[i]:mul(1-a)
+                    end
+                    local pnorm = params_current[i]:norm()
+                    if config_layers.weightClips[i]>0 and pnorm > config_layers.weightClips[i] then
+                        params_current[i]:mul(config_layers.weightClips[i]/pnorm)
+                    end
+                end
+            else
+                local norm_dw = paramdx:norm()
+                if norm_dw > opt.max_gradientnorm then
+                    local shrink_factor = opt.max_gradientnorm / norm_dw
+                    paramdx:mul(shrink_factor)
+                end
+                paramx:add(g_paramdx:mul(-opt.lr))
+            end
+
+        end
+
+        --batch finished
+        nBatch = nBatch + 1
+        if nBatch % 100 == 0 then
+            local tick = os.clock()
+            print(string.format("100 batches took: %.2f", tick - last_tick))
+            last_tick = tick
+        end
+    
+        count_batch = count_batch+1
+        if count_batch == 120 then
+            collectgarbage()
+            count_batch = 0
+        end
+
     end
+
     -- 1 epoch finished
     if updateIDX~='test' then
-        local gtAnswer = state.x_answer:clone()
+        local gtAnswer = state.x_answer:clone():cuda()
         local correctNum = torch.sum(torch.eq(pred_answer, gtAnswer))
         acc = correctNum*1.0/pred_answer:size(1)
     else

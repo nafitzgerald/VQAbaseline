@@ -114,6 +114,9 @@ function runTrainVal()
         local state_train, manager_vocab = load_visualqadataset(opt, 'trainval2014_train', nil)
         local state_val, _ = load_visualqadataset(opt, 'trainval2014_val', manager_vocab)
 
+        state_train.dataset = make_batches(opt, state_train, manager_vocab, 'train')
+        state_val.dataset = make_batches(opt, state_val, manager_vocab, 'val')
+
 	local model, criterion, paramx, paramdx
         if opt.recoverfrom == nil or opt.recoverfrom == '' then
             model, criterion = build_model(opt, manager_vocab)
@@ -182,6 +185,7 @@ function runTrainVal()
         -- Combine train2014 and val2014
         local nEpoch_trainAll = nEpoch_best
         local state_train, manager_vocab = load_visualqadataset(opt, 'trainval2014', nil)
+        state_train.dataset = make_batches(opt, state_train, manager_vocab, 'train')
         -- recreate the model  
         local model, criterion = build_model(opt, manager_vocab)
         local paramx, paramdx = model:getParameters()
@@ -236,6 +240,7 @@ function runTest()
 
     -- load test data
     local state_test, _ = load_visualqadataset(opt, testSet, manager_vocab)
+    state_test.dataset = make_batches(opt, state_test, manager_vocab, 'train')
 
     local context = {
         model = model,
