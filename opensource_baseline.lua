@@ -23,9 +23,16 @@ function build_model(opt, manager_vocab)
         model:add(nn.Linear(opt.vdim, manager_vocab.nvocab_answer))
     
     elseif opt.method == 'BOWIMG' then
+
         model = nn.Sequential()
-        local module_tdata = nn.Sequential():add(nn.SelectTable(1)):add(nn.LinearNB(manager_vocab.nvocab_question, opt.embed_word))
-        local module_vdata = nn.Sequential():add(nn.SelectTable(2))
+        local module_vdata = nn.Sequential():add(nn.SelectTable(1))
+        local repSizes = nn.Sequential():add(nn.SelectTable(2)):add(nn.Replicate(opt.seq_length, 2))
+        local cat1 = nn.ConcatTable():add(nn.SelectTable(3)):add(repSizes)
+        local replicatedMask = nn.Sequential():add(cat1):add(nn.CDivTable()):add(nn.Replicate(opt.embed_word, 3))
+        local lookup = nn.Sequential():add(nn.SelectTable(4)):add(nn.LookupTable(manager_vocab.nvocab_question, opt.embed_word))
+        local cat2 = nn.ConcatTable():add(lookup):add(replicatedMask)
+        local module_tdata = nn.Sequential():add(cat2):add(nn.CMulTable()):add(nn.Sum(2)) --:add(nn.Tanh())
+
         local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
         model:add(cat):add(nn.JoinTable(2))
         model:add(nn.LinearNB(opt.embed_word + opt.vdim, manager_vocab.nvocab_answer))
@@ -40,6 +47,13 @@ function build_model(opt, manager_vocab)
     criterion.sizeAverage = false
     model:cuda()
     criterion:cuda()
+
+    --local vdata_debug = torch.rand(opt.batchsize, opt.vdim):cuda()
+    --local seq_length_debug = torch.mul(torch.rand(opt.batchsize), opt.seq_length):int():double():int():cuda()
+    --local seq_mask_debug = torch.mul(torch.rand(opt.batchsize, opt.seq_length), 2):int():double():int():cuda()
+    --local question_debug = torch.add(torch.mul(torch.rand(opt.batchsize, opt.seq_length), 1000), 1):int():double():cuda()
+    --local input_debug = {vdata_debug, seq_length_debug, seq_mask_debug, question_debug}
+    --debugger.enter()
 
     return model, criterion
 end

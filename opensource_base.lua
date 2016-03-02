@@ -217,8 +217,11 @@ function load_visualqadataset(opt, dataType, manager_vocab)
 
     -- Convert words in answers and questions to indices into the dictionary.
     local x_question = torch.zeros(nSample, opt.seq_length)
+    local x_seq_mask = torch.zeros(nSample, opt.seq_length)
+    local x_seq_length = torch.zeros(nSample)
     for i = 1, nSample do
         local words = stringx.split(data_question_split[i])
+        x_seq_length[i] = math.min(#words, opt.seq_length)
         -- Answers
         if existfile(filename_answer) then
             local answer = data_answer_split[i]
@@ -236,6 +239,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
                 else
                     x_question[{i, j}] = manager_vocab_.vocab_map_question[words[j]]
                 end
+                x_seq_mask[{i, j}] = 1
             else
                 x_question[{i, j}] = manager_vocab_.vocab_map_question['END']
             end
@@ -282,6 +286,8 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     -- Return the state.
     local _state = {
         x_question = x_question, 
+        x_seq_mask = x_seq_mask,
+        x_seq_length = x_seq_length,
         x_answer = x_answer, 
         x_answer_num = x_answer_num, 
         featureMap = featureMap, 
@@ -440,7 +446,8 @@ function new_batch(opt, manager_vocab)
     batch.IDXset_batch = torch.zeros(opt.batchsize)
     batch.target = torch.zeros(opt.batchsize)
     batch.word_idx = torch.zeros(opt.batchsize, opt.seq_length)
-    batch.featBatch_word = torch.zeros(opt.batchsize, manager_vocab.nvocab_question)
+    batch.seq_length = torch.zeros(opt.batchsize)
+    batch.seq_mask = torch.zeros(opt.batchsize, opt.seq_length)
     batch.featBatch_visual = torch.zeros(opt.batchsize, opt.vdim)
     return batch
 end
@@ -480,10 +487,10 @@ function make_batches(opt, state, manager_vocab, updateIDX)
             end
             local filename = state.imglist[i]--'COCO_train2014_000000000092'
             local feat_visual = state.featureMap[filename]:clone()
-            local feat_word = bagofword(manager_vocab, state.x_question[i])
 
             currBatch.word_idx[nSample_batch] = state.x_question[i]
-            currBatch.featBatch_word[nSample_batch] = feat_word:clone()
+            currBatch.seq_length[nSample_batch] = state.x_seq_length[i]
+            currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
             currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
                 
             while iii == state.x_question:size(1) and nSample_batch< opt.batchsize do
@@ -492,8 +499,9 @@ function make_batches(opt, state, manager_vocab, updateIDX)
                 currBatch.IDXset_batch[nSample_batch] = i
                 currBatch.target[nSample_batch] = first_answer
                 currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
-                currBatch.featBatch_word[nSample_batch] = feat_word:clone()
                 currBatch.word_idx[nSample_batch] = state.x_question[i]
+                currBatch.seq_length[nSample_batch] = state.x_seq_length[i]
+                currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
             end 
             if nSample_batch == opt.batchsize then                
                 nBatch = nBatch+1
@@ -510,7 +518,8 @@ function make_batches(opt, state, manager_vocab, updateIDX)
         batch.target = batch.target:cuda()
         batch.word_idx = batch.word_idx:cuda()
         batch.featBatch_visual = batch.featBatch_visual:cuda()
-        batch.featBatch_word = batch.featBatch_word:cuda()
+        batch.seq_length = batch.seq_length:cuda()
+        batch.seq_mask = batch.seq_mask:cuda()
     end
 
     return dataset
@@ -539,7 +548,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
        if opt.method == 'BOW' then
             input = batch.featBatch_word
         elseif opt.method == 'BOWIMG' then
-            input = {batch.featBatch_word, batch.featBatch_visual}
+            input = {batch.featBatch_visual, batch.seq_length, batch.seq_mask, batch.word_idx}
         elseif opt.method == 'IMG' then
             input = batch.featBatch_visual
         else 
