@@ -564,24 +564,26 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
         loss = loss + err
 
         -- Compute accuracy for multiple choices.
-        local y_max, i_max = torch.max(prob_batch,2)
-        i_max = torch.squeeze(i_max)
-        for j = 1, opt.batchsize do
-            local idx = batch.IDXset_batch[j]
-            local choices = stringx.split(state.data_choice[idx], ',')
-            local score_choices = torch.zeros(#choices):fill(-1000000)
-            for n = 1, #choices do
-                local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
-                if IDX_pred ~= nil then
-                    local score = prob_batch[{j, IDX_pred}]
-                    if score ~= nil then
-                        score_choices[n] = score
+        if updateIDX ~= 'train' or opt.test_during_train==1 then
+            local y_max, i_max = torch.max(prob_batch,2)
+            i_max = torch.squeeze(i_max)
+            for j = 1, opt.batchsize do
+                local idx = batch.IDXset_batch[j]
+                local choices = stringx.split(state.data_choice[idx], ',')
+                local score_choices = torch.zeros(#choices):fill(-1000000)
+                for n = 1, #choices do
+                    local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
+                    if IDX_pred ~= nil then
+                        local score = prob_batch[{j, IDX_pred}]
+                        if score ~= nil then
+                            score_choices[n] = score
+                        end
                     end
                 end
+                local val_max, IDX_max = torch.max(score_choices, 1)
+                pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
+                pred_answer[idx] = i_max[j]
             end
-            local val_max, IDX_max = torch.max(score_choices, 1)
-            pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
-            pred_answer[idx] = i_max[j]
         end
 
         --------------------backforward pass
@@ -639,25 +641,27 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     end
 
     -- 1 epoch finished
-    if updateIDX~='test' then
-        local gtAnswer = state.x_answer:clone():cuda()
-        local correctNum = torch.sum(torch.eq(pred_answer, gtAnswer))
-        acc = correctNum*1.0/pred_answer:size(1)
-    else
-        acc = -1
-    end
-    print(updateIDX ..': acc (mostFreq) =' .. acc)
     local perfs = nil
-    if updateIDX ~= 'test' and state.data_allanswer ~= nil then
-        -- using the standard evalution criteria of QA virginiaTech
-        perfs = evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi)
-        print(updateIDX .. ': acc.match mostfreq = ' .. perfs.most_freq)
-        print(updateIDX .. ': acc.dataset (OpenEnd) =' .. perfs.openend_overall)
-        print(updateIDX .. ': acc.dataset (MultipleChoice) =' .. perfs.multiple_overall)
-        -- If you want to see more statistics. do the following:
-        -- print(perfs)
+    if updateIDX ~= 'train' or opt.test_during_train==1 then
+        if updateIDX~='test' then
+            local gtAnswer = state.x_answer:clone():cuda()
+            local correctNum = torch.sum(torch.eq(pred_answer, gtAnswer))
+            acc = correctNum*1.0/pred_answer:size(1)
+        else
+            acc = -1
+        end
+        print(updateIDX ..': acc (mostFreq) =' .. acc)
+        if updateIDX ~= 'test' and state.data_allanswer ~= nil then
+            -- using the standard evalution criteria of QA virginiaTech
+            perfs = evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi)
+            print(updateIDX .. ': acc.match mostfreq = ' .. perfs.most_freq)
+            print(updateIDX .. ': acc.dataset (OpenEnd) =' .. perfs.openend_overall)
+            print(updateIDX .. ': acc.dataset (MultipleChoice) =' .. perfs.multiple_overall)
+            -- If you want to see more statistics. do the following:
+            -- print(perfs)
+        end
+        print(updateIDX .. ' loss=' .. loss/nBatch)
     end
-    print(updateIDX .. ' loss=' .. loss/nBatch)
     print(string.format('epoch took: %.2fs', os.clock()-start_epoch))
     return pred_answer, pred_answer_multi, perfs
 end

@@ -46,13 +46,6 @@ function build_model(opt, manager_vocab)
     model:cuda()
     criterion:cuda()
 
-    --local vdata_debug = torch.rand(opt.batchsize, opt.vdim):cuda()
-    --local seq_length_debug = torch.mul(torch.rand(opt.batchsize), opt.seq_length):int():double():int():cuda()
-    --local seq_mask_debug = torch.mul(torch.rand(opt.batchsize, opt.seq_length), 2):int():double():int():cuda()
-    --local question_debug = torch.add(torch.mul(torch.rand(opt.batchsize, opt.seq_length), 1000), 1):int():double():cuda()
-    --local input_debug = {vdata_debug, seq_length_debug, seq_mask_debug, question_debug}
-    --debugger.enter()
-
     return model, criterion
 end
 
@@ -85,6 +78,7 @@ function initial_params()
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
     cmd:option('--embed_word', 1024,'the word embedding dimension in baseline')
+    cmd:option('--test_during_train', 0, 'whether to compute train error')
 
     -- parameters for universal learning rate
     cmd:option('--maxgradnorm', 20)
