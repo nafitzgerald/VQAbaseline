@@ -446,13 +446,13 @@ function new_batch(opt, manager_vocab)
     batch.IDXset_batch = torch.zeros(opt.batchsize)
     batch.target = torch.zeros(opt.batchsize)
     batch.word_idx = torch.zeros(opt.batchsize, opt.seq_length)
-    batch.seq_length = torch.zeros(opt.batchsize)
     batch.seq_mask = torch.zeros(opt.batchsize, opt.seq_length)
     batch.featBatch_visual = torch.zeros(opt.batchsize, opt.vdim)
     return batch
 end
 
 function make_batches(opt, state, manager_vocab, updateIDX)
+    local start_time = os.clock()
     local n = state.x_question:size(1)
     local randIDX = torch.randperm(n)
     if updateIDX == 'test' then
@@ -489,18 +489,16 @@ function make_batches(opt, state, manager_vocab, updateIDX)
             local feat_visual = state.featureMap[filename]:clone()
 
             currBatch.word_idx[nSample_batch] = state.x_question[i]
-            currBatch.seq_length[nSample_batch] = state.x_seq_length[i]
             currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
             currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
                 
-            while iii == state.x_question:size(1) and nSample_batch< opt.batchsize do
+            while i == state.x_question:size(1) and nSample_batch< opt.batchsize do
                 -- padding the extra sample to complete a batch for training
                 nSample_batch = nSample_batch+1
                 currBatch.IDXset_batch[nSample_batch] = i
                 currBatch.target[nSample_batch] = first_answer
                 currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
                 currBatch.word_idx[nSample_batch] = state.x_question[i]
-                currBatch.seq_length[nSample_batch] = state.x_seq_length[i]
                 currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
             end 
             if nSample_batch == opt.batchsize then                
@@ -518,9 +516,10 @@ function make_batches(opt, state, manager_vocab, updateIDX)
         batch.target = batch.target:cuda()
         batch.word_idx = batch.word_idx:cuda()
         batch.featBatch_visual = batch.featBatch_visual:cuda()
-        batch.seq_length = batch.seq_length:cuda()
         batch.seq_mask = batch.seq_mask:cuda()
     end
+
+    print(string.format('make_batches took: %.2f', os.clock() - start_time))
 
     return dataset
 end -- make_batches
@@ -543,12 +542,15 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local count_batch = 0
     local nBatch = 0
 
-    local last_tick = os.clock()
+    state.dataset = make_batches(opt, state, manager_vocab, updateIDX)
+
+    local start_epoch = os.clock()
+    local last_tick = start_epoch
     for _, batch in pairs(state.dataset.batches) do
        if opt.method == 'BOW' then
             input = batch.featBatch_word
         elseif opt.method == 'BOWIMG' then
-            input = {batch.featBatch_visual, batch.seq_length, batch.seq_mask, batch.word_idx}
+            input = {batch.featBatch_visual, batch.seq_mask, batch.word_idx}
         elseif opt.method == 'IMG' then
             input = batch.featBatch_visual
         else 
@@ -656,6 +658,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
         -- print(perfs)
     end
     print(updateIDX .. ' loss=' .. loss/nBatch)
+    print(string.format('epoch took: %.2fs', os.clock()-start_epoch))
     return pred_answer, pred_answer_multi, perfs
 end
 
