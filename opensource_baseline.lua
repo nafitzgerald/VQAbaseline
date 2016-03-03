@@ -61,6 +61,11 @@ function initial_params()
     cmd:option('--savetag', 'BOWIMG')
     cmd:option('--inputrep', 'question')
     cmd:option('--recoverfrom', '')
+    cmd:option('--runmode', 'train')
+    cmd:option('--trainval', 1)
+    cmd:option('--trainall', 0)
+    cmd:option('--inputmodel', '')
+    cmd:option('--resultdir', 'result')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -103,10 +108,10 @@ function adjust_learning_rate(epoch_num, opt, config_layers)
 end
 
 function runTrainVal()
-    local method = 'BOWIMG'
-    local step_trainval = true --  step for train and valiaton
-    local step_trainall = false --  step for combining train2014 and val2014
     local opt = initial_params()
+    local method = 'BOWIMG'
+    local step_trainval = opt.trainval --  step for train and valiaton
+    local step_trainall = opt.trainall --  step for combining train2014 and val2014
     opt.method = method
     if opt.savetag == nil or opt.savetag == '' then
         opt.savetag = method .. '_' .. opt.inputrep
@@ -233,8 +238,20 @@ function runTest()
     if opt.savetag == nil or opt.savetag == '' then
         opt.savetag = method .. '_' .. opt.inputrep
     end
-    local model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
-    local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
+    local model_path = nil
+    if opt.inputmodel == nil or opt.inputmodel == '' then
+        model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
+    else
+        model_path = opt.inputmodel
+    end
+    local testSet = nil
+    if opt.runmode == 'finaltest' then
+        testSet = 'test2015'
+    elseif opt.runmode == 'testval' then
+        testSet = 'trainval2014_val'
+    else
+        testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
+    end
     opt.method = method
 
     -- load pre-trained model 
@@ -256,8 +273,8 @@ function runTest()
     local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
     
     -- output to csv file to be submitted to the VQA evaluation server
-    local file_json_openend = 'result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
-    local file_json_multiple = 'result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
+    local file_json_openend = paths.concat(opt.resultdir, 'vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
+    local file_json_multiple = paths.concat(opt.resultdir, 'vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
     local choice = 0   
     outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice)
@@ -268,5 +285,10 @@ function runTest()
     collectgarbage()
 end
 
-runTrainVal()
-runTest()
+opt = initial_params() 
+if opt.runmode == 'train' then
+    runTrainVal()
+    runTest()
+else
+    runTest()
+end
