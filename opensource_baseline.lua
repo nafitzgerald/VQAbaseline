@@ -110,8 +110,8 @@ end
 function runTrainVal()
     local opt = initial_params()
     local method = 'BOWIMG'
-    local step_trainval = opt.trainval --  step for train and valiaton
-    local step_trainall = opt.trainall --  step for combining train2014 and val2014
+    local step_trainval = opt.trainval == 1 --  step for train and valiaton
+    local step_trainall = opt.trainall == 1 --  step for combining train2014 and val2014
     opt.method = method
     if opt.savetag == nil or opt.savetag == '' then
         opt.savetag = method .. '_' .. opt.inputrep
