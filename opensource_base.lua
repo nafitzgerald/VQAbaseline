@@ -219,18 +219,47 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     local x_question = torch.zeros(nSample, opt.seq_length)
     local x_seq_mask = torch.zeros(nSample, opt.seq_length)
     local x_seq_length = torch.zeros(nSample)
+    local numNoAnswer = 0
     for i = 1, nSample do
         local words = stringx.split(data_question_split[i])
         x_seq_length[i] = math.min(#words, opt.seq_length)
         -- Answers
-        if existfile(filename_answer) then
-            local answer = data_answer_split[i]
-            if manager_vocab_.vocab_map_answer[answer] == nil then
-                x_answer[i] = -1
-            else
-                x_answer[i] = manager_vocab_.vocab_map_answer[answer]
+        --if existfile(filename_answer) then
+        --    local answer = data_answer_split[i]
+        --    if manager_vocab_.vocab_map_answer[answer] == nil then
+        --        numNoAnswer = numNoAnswer + 1
+        --        x_answer[i] = -1
+        --    else
+        --        x_answer[i] = manager_vocab_.vocab_map_answer[answer]
+        --    end
+        --end
+        if existfile(filename_allanswer) then
+            local answerline = data_allanswer[i]
+            counts = {}
+            for _, a in pairs(stringx.split(answerline, ',')) do
+                a_id = manager_vocab_.vocab_map_answer[a]
+                if a_id ~= nil then
+                    if counts[a_id] == nil then
+                        counts[a_id] = 0
+                    end
+                    counts[a_id] = counts[a_id] + 1
+                end
+            end
+
+            local answer = -1
+            local max_count = 0
+            for a, count in pairs(counts) do
+                if count > max_count then
+                    answer = a
+                    max_count = count
+                end
+            end
+            x_answer[i] = answer
+            if answer == -1 then
+                numNoAnswer = numNoAnswer+1
             end
         end
+
         -- Questions
         for j = 1, opt.seq_length do
             if j <= #words then
@@ -241,7 +270,8 @@ function load_visualqadataset(opt, dataType, manager_vocab)
                 end
                 x_seq_mask[{i, j}] = 1
             else
-                x_question[{i, j}] = manager_vocab_.vocab_map_question['END']
+                --x_question[{i, j}] = manager_vocab_.vocab_map_question['END']
+                x_question[{i,j}] = torch.random(1, manager_vocab_.nvocab_question)
             end
         end
     end
