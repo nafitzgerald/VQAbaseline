@@ -566,6 +566,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local grad_last = context.grad_last
  
     local loss = 0.0
+    local batch_loss = 0.0
     local pred_answer = torch.zeros(state.x_question:size(1)):cuda()
     local pred_answer_multi = torch.zeros(state.x_question:size(1)):cuda()
 
@@ -655,6 +656,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
         end
 
         --batch finished
+
         nBatch = nBatch + 1
         if nBatch % 100 == 0 then
             local tick = os.clock()
