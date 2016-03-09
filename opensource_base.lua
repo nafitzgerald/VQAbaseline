@@ -1,3 +1,4 @@
+require('lfs')
 local debugger = require 'fb.debugger'
 local stringx = require 'pl.stringx'
 local file = require 'pl.file'
@@ -147,6 +148,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     -- VQA question/answer txt files.
     -- Download data_vqa_feat.zip and data_vqa_txt.zip and decompress into this folder
     local path_dataset = 'data/'
+    local vgg_image_path = '/home/nfitz/data/VQA/images/'
     
     local prefix = 'coco_' .. dataType 
     local filename_question = paths.concat(path_dataset, prefix .. '_' .. opt.inputrep .. '.txt')
@@ -283,8 +285,6 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     local featName = 'googlenetFCdense'
 
     print(featName)
-
-    -- Possible combinations of data loading
     local loading_spec = {
         trainval2014 = { train = true, val = true, test = false },
         trainval2014_train = { train = true, val = true, test = false },
@@ -294,20 +294,42 @@ function load_visualqadataset(opt, dataType, manager_vocab)
         test2015 = { train = false, val = false, test = true }
     }
     loading_spec['test-dev2015'] = { train = false, val = false, test = true }
-    local feature_prefixSet = {
-        train = paths.concat(path_dataset, 'coco_train2014_' .. featName), 
-        val = paths.concat(path_dataset, 'coco_val2014_' .. featName),
-        test = paths.concat(path_dataset,'coco_test2015_' .. featName)
-    }
+ 
+    imagefileMap = {}
+    if opt.trainvgg and 1 then
+        local imagedir_prefixSet = {
+            train = paths.concat(vgg_image_path, 'train2014', 'train2014_vgg_preproc'),
+            val = paths.concat(vgg_image_path, 'val2014', 'val2014_vgg_preproc'),
+            test = paths.concat(vgg_image_path, 'test2015', 'test2015_vgg_preproc')
+        }
 
-    for k, feature_prefix in pairs(feature_prefixSet) do
-        -- Check if we need to load this dataset.
-        if loading_spec[dataType][k] then
-            local feature_imglist = torch.load(feature_prefix ..'_imglist.dat')
-            local featureSet = torch.load(feature_prefix ..'_feat.dat')
-            for i = 1, #feature_imglist do
-                local feat_in = torch.squeeze(featureSet[i])
-                featureMap[feature_imglist[i]] = feat_in
+        for k, image_prefix in pairs(imagedir_prefixSet) do
+            if loading_spec[dataType][k] then
+                for file in lfs.dir(image_prefix) do
+                    if stringx.endswith(file, ".t7") then
+                        name = stringx.split(file, '.')[1]
+                        imagefileMap[name] = paths.concat(image_prefix, file)
+                    end
+                end
+            end
+        end
+    else
+        -- Possible combinations of data loading
+        local feature_prefixSet = {
+            train = paths.concat(path_dataset, 'coco_train2014_' .. featName), 
+            val = paths.concat(path_dataset, 'coco_val2014_' .. featName),
+            test = paths.concat(path_dataset,'coco_test2015_' .. featName)
+        }
+
+        for k, feature_prefix in pairs(feature_prefixSet) do
+            -- Check if we need to load this dataset.
+            if loading_spec[dataType][k] then
+                local feature_imglist = torch.load(feature_prefix ..'_imglist.dat')
+                local featureSet = torch.load(feature_prefix ..'_feat.dat')
+                for i = 1, #feature_imglist do
+                    local feat_in = torch.squeeze(featureSet[i])
+                    featureMap[feature_imglist[i]] = feat_in
+                end
             end
         end
     end
@@ -321,6 +343,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
         x_answer = x_answer, 
         x_answer_num = x_answer_num, 
         featureMap = featureMap, 
+        imagefileMap = imagefileMap,
         data_question = data_question_split,
         data_answer = data_answer_split, 
         imglist = imglist, 
@@ -330,7 +353,6 @@ function load_visualqadataset(opt, dataType, manager_vocab)
         data_question_type = data_question_type, 
         data_answer_type = data_answer_type, 
         data_questionID = data_questionID
-
     }
     
     return _state, manager_vocab_
@@ -477,30 +499,14 @@ function new_batch(opt, manager_vocab)
     batch.target = torch.zeros(opt.batchsize)
     batch.word_idx = torch.zeros(opt.batchsize, opt.seq_length)
     batch.seq_mask = torch.zeros(opt.batchsize, opt.seq_length)
-    batch.featBatch_visual = torch.zeros(opt.batchsize, opt.vdim)
     return batch
 end
 
-function make_batches(opt, state, manager_vocab, updateIDX)
-    local start_time = os.clock()
+function fill_batch(idx, currBatch, randIDX, state, opt, updateIDX)
     local n = state.x_question:size(1)
-    local randIDX = torch.randperm(n)
-    if updateIDX == 'test' then
-        randIDX = torch.range(1, n)
-    end
 
     local nSample_batch = 0
-    local dataset = {}
-    dataset.size = n
-    dataset.batches = {}
-    dataset.batchSize = opt.batchsize
-
-    local nBatch = 1
-    for iii = 1, n do
-        if currBatch == nil then
-            currBatch = new_batch(opt, manager_vocab)
-        end
-
+    for iii = idx, n do
         local i = randIDX[iii]
 
         local first_answer = -1
@@ -515,43 +521,43 @@ function make_batches(opt, state, manager_vocab, updateIDX)
             if updateIDX ~= 'test' then
                 currBatch.target[nSample_batch] = state.x_answer[i]
             end
+
             local filename = state.imglist[i]--'COCO_train2014_000000000092'
-            local feat_visual = state.featureMap[filename]:clone()
+            local feat_visual = nil
+            if not opt.trainvgg and 1 then
+                feat_visual = state.featureMap[filename]:clone()
+                currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+            else
+                local file = state.imagefileMap[filename]
+                local im = torch.load(file)
+                currBatch.featBatch_visual[nSample_batch] = im.image:clone()
+            end
 
             currBatch.word_idx[nSample_batch] = state.x_question[i]
             currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
-            currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
                 
             while i == state.x_question:size(1) and nSample_batch< opt.batchsize do
                 -- padding the extra sample to complete a batch for training
                 nSample_batch = nSample_batch+1
                 currBatch.IDXset_batch[nSample_batch] = i
                 currBatch.target[nSample_batch] = first_answer
-                currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
                 currBatch.word_idx[nSample_batch] = state.x_question[i]
                 currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
+                if not opt.trainvgg and 1 then
+                    currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+                else
+                    local file = state.imagefileMap[filename]
+                    local im = torch.load(file)
+                    currBatch.featBatch_visual[nSample_batch] = im.image:clone()
+                end
             end 
             if nSample_batch == opt.batchsize then                
-                nBatch = nBatch+1
-                nSample_batch = 0
-                table.insert(dataset.batches, currBatch)
-                currBatch = nil
+                return iii
             end
         end
     end
 
-    -- put all on GPU
-    for _, batch in pairs(dataset.batches) do
-        batch.IDXset_batch = batch.IDXset_batch:cuda()
-        batch.target = batch.target:cuda()
-        batch.word_idx = batch.word_idx:cuda()
-        batch.featBatch_visual = batch.featBatch_visual:cuda()
-        batch.seq_mask = batch.seq_mask:cuda()
-    end
-
-    print(string.format('make_batches took: %.2f', os.clock() - start_time))
-
-    return dataset
+    error('should not reach here')
 end -- make_batches
 
 function train_epoch(opt, state, manager_vocab, context, updateIDX)
@@ -573,12 +579,33 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local count_batch = 0
     local nBatch = 0
 
-    state.dataset = make_batches(opt, state, manager_vocab, updateIDX)
-
+    local batch = {}
+    batch = {}
+    batch.IDXset_batch = torch.zeros(opt.batchsize):cuda()
+    batch.target = torch.zeros(opt.batchsize):cuda()
+    batch.word_idx = torch.zeros(opt.batchsize, opt.seq_length):cuda()
+    batch.seq_mask = torch.zeros(opt.batchsize, opt.seq_length):cuda()
+    if opt.trainvgg and 1 then
+        batch.featBatch_visual = torch.zeros(opt.batchsize, 3, 224, 224):cuda()
+    else
+        batch.featBatch_visual = torch.zeros(opt.batchsize, opt.vdim):cuda()
+    end
+ 
     local start_epoch = os.clock()
     local last_tick = start_epoch
-    for _, batch in pairs(state.dataset.batches) do
-       if opt.method == 'BOW' then
+    local n = state.x_question:size(1)
+
+    local randIDX = torch.randperm(n)
+    if updateIDX == 'test' then
+        randIDX = torch.range(1, n)
+    end
+
+    local idx = 1
+
+    while idx < n do
+        idx = fill_batch(idx, batch, randIDX, state, opt, updateIDX)
+
+        if opt.method == 'BOW' then
             input = batch.featBatch_word
         elseif opt.method == 'BOWIMG' then
             input = {batch.featBatch_visual, batch.seq_mask, batch.word_idx}
@@ -652,7 +679,6 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
                 end
                 paramx:add(g_paramdx:mul(-opt.lr))
             end
-
         end
 
         --batch finished

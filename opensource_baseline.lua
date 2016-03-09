@@ -1,3 +1,4 @@
+require 'loadcaffe'
 require 'paths'
 require 'cunn'
 require 'nn'
@@ -25,7 +26,21 @@ function build_model(opt, manager_vocab)
     elseif opt.method == 'BOWIMG' then
 
         model = nn.Sequential()
-        local module_vdata = nn.Sequential():add(nn.SelectTable(1))
+
+        local module_vdata = nil
+        local vdim = nil
+        if opt.trainvgg and 1 then
+            vgg = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
+            vgg:remove()
+            vgg:remove()
+            module_vdata = nn.Sequential():add(nn.SelectTable(1)):add(vgg)
+            vdim = 4096
+        else
+            module_vdata = nn.Sequential():add(nn.SelectTable(1))
+            vdim = opt.vdim
+        end
+
+
         local replicatedMask = nn.Sequential():add(nn.SelectTable(2)):add(nn.Replicate(opt.embed_word,3))
         local lookup = nn.Sequential():add(nn.SelectTable(3)):add(nn.LookupTable(manager_vocab.nvocab_question, opt.embed_word))
         local cat2 = nn.ConcatTable():add(lookup):add(replicatedMask)
@@ -33,11 +48,10 @@ function build_model(opt, manager_vocab)
 
         local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
         model:add(cat):add(nn.JoinTable(2))
-        model:add(nn.LinearNB(opt.embed_word + opt.vdim, manager_vocab.nvocab_answer))
+        model:add(nn.LinearNB(opt.embed_word + vdim, manager_vocab.nvocab_answer))
 
     else
         print('no such methods')
-
     end
 
     model:add(nn.LogSoftMax())
@@ -70,6 +84,7 @@ function initial_params()
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
     cmd:option('--vdim', 1024)
+    cmd:option('--trainvgg', 0)
 
     -- parameters for data pre-process
     cmd:option('--thresh_questionword',6, 'threshold for the word freq on question')
