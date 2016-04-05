@@ -29,7 +29,7 @@ function build_model(opt, manager_vocab)
 
         local module_vdata = nil
         local vdim = nil
-        if opt.trainvgg and 1 then
+        if opt.trainvgg == 1 then
             vgg = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
             vgg:remove()
             vgg:remove()
@@ -63,6 +63,24 @@ function build_model(opt, manager_vocab)
     return model, criterion
 end
 
+function get_vgg_module()
+        vgg = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
+        vgg:remove()
+        vgg:remove()
+        module_vdata = nn.Sequential():add(nn.SelectTable(1)):add(vgg)
+        return module_vdata
+end
+
+function add_vgg(model)
+    module_tdata = model:get(1):get(1)
+    module_vdata = get_vgg_module()
+    local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
+    model:remove(1)
+    model:insert(cat, 1)
+    model:cuda()
+    return model
+end
+
 function initial_params()
     local gpuidx = getFreeGPU()
     print('use GPU IDX=' .. gpuidx)
@@ -80,6 +98,7 @@ function initial_params()
     cmd:option('--trainall', 0)
     cmd:option('--inputmodel', '')
     cmd:option('--resultdir', 'result')
+    cmd:option('--path_dataset', 'data/')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -151,9 +170,16 @@ function runTrainVal()
             print("Recovering from: " .. opt.recoverfrom)
             local f_model = torch.load(opt.recoverfrom)
             manager_vocab = f_model.manager_vocab 
+            local old_train = opt.trainvgg
+            opt.trainvgg = 0
             model, criterion = build_model(opt, manager_vocab)
             paramx, paramdx = model:getParameters()
             paramx:copy(f_model.paramx)
+            opt.trainvgg = old_train
+
+            if opt.trainvgg == 1 then
+                model = add_vgg(model)
+            end
         end
         local params_current, gparams_current = model:parameters()
 

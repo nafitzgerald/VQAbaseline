@@ -2,7 +2,10 @@ require('loadcaffe')
 require('image')
 require('lfs')
 require('paths')
+require('cunn')
+require('torch')
 local stringx = require 'pl.stringx'
+local debugger = require 'fb.debugger'
 
 
 local resize_to = 224
@@ -42,9 +45,10 @@ function do_dir(indir, outdir)
     end
 end
 
-function cache_vgg(indir, outdir)
+function cache_vgg(indir, outdir, mean)
 
     model = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
+
     model:remove()
     model:remove()
     model:remove()
@@ -59,20 +63,37 @@ function cache_vgg(indir, outdir)
         topLayers:add(model:get(i))
     end
 
+    convLayers:evaluate()
+    topLayers:evaluate()
+    convLayers:cuda()
+    topLayers:cuda()
+
+    local i = 1
     for file in lfs.dir(indir) do
-        if stringx.endswith(file, '.t7') then
+        if stringx.endswith(file, '.jpg') then
+            print(i)
+            i = i+1
             -- change this after this run
-            local im = torch.load(file)
-            name = stringx.split(file, '.')[1]
-            outfile = paths.join(indir, name .. '.jpg')
-            image.save(outfile, im)
+            local infile = paths.concat(indir, file)
+            local im = image.load(infile, 3, 'double')*255
+            name = stringx.replace(file, '_cropped.jpg', '')
             -- change to here
+            im = image.flip(im, 1)
+            im = im:cuda()
+            im:csub(mean)
 
             convOutput = convLayers:forward(im)
             topOutput = topLayers:forward(convOutput)
-            print(convOutpur:size())
-            print(topOutput:size())
-            os.exit()
+
+            convFile = paths.concat(outdir, name .. '_vggConv.t7')
+            conv = {}
+            conv.data = convOutput
+            torch.save(convFile, conv)
+
+            topFile = paths.concat(outdir, name .. '_vggTop.t7')
+            top = {}
+            top.data = topOutput
+            torch.save(topFile, top)
         end
     end
 end
@@ -90,5 +111,12 @@ end
 --local outdir = "/home/nfitz/data/VQA/images/val2014/val2014_vgg_preproc/"
 --do_dir(indir, outdir)
 
-local indir = "/home/nfitz/data/VQA/images/val2014/val2014_vgg_preproc/"
-cache_vgg(indir, outdir)
+local mean = torch.Tensor{103.939, 116.779, 123.68}
+mean:resize(3,1,1)
+mean = torch.expand(mean, 3, resize_to, resize_to)
+mean = mean:cuda()
+
+local tag = arg[1]
+local outdir = string.format("/home/nfitz/data/VQA/images/%s/", tag)
+local indir = outdir
+cache_vgg(indir, outdir, mean)
