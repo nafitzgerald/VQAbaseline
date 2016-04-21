@@ -66,6 +66,7 @@ function initial_params()
     cmd:option('--trainall', 0)
     cmd:option('--inputmodel', '')
     cmd:option('--resultdir', 'result')
+    cmd:option('--datapath', 'data/')
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
