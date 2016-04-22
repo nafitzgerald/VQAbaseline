@@ -258,8 +258,16 @@ function load_visualqadataset(opt, dataType, manager_vocab)
             if answer == -1 then
                 numNoAnswer = numNoAnswer+1
             end
+        elseif existfile(filename_answer) then
+            local answer = data_answer_split[i]
+            if manager_vocab_.vocab_map_answer[answer] == nil then
+                numNoAnswer = numNoAnswer + 1
+                x_answer[i] = -1
+            else
+                x_answer[i] = manager_vocab_.vocab_map_answer[answer]
+            end
         end
-
+ 
         -- Questions
         for j = 1, opt.seq_length do
             if j <= #words then
@@ -490,15 +498,24 @@ function make_batches(opt, state, manager_vocab, updateIDX)
     end
 
     local nSample_batch = 0
-    local dataset = {}
-    dataset.size = n
-    dataset.batches = {}
-    dataset.batchSize = opt.batchsize
+    local dataset = nil
+    if state.dataset ~= nil then
+        dataset = state.dataset
+    else
+        dataset = {}
+        dataset.size = n
+        dataset.batches = {}
+        dataset.batchSize = opt.batchsize
+    end
 
     local nBatch = 1
     for iii = 1, n do
         if currBatch == nil then
-            currBatch = new_batch(opt, manager_vocab)
+            if dataset.batches[nBatch] == nil then
+                currBatch = new_batch(opt, manager_vocab)
+            else
+                currBatch = dataset.batches[nBatch]
+            end
         end
 
         local i = randIDX[iii]
@@ -516,25 +533,26 @@ function make_batches(opt, state, manager_vocab, updateIDX)
                 currBatch.target[nSample_batch] = state.x_answer[i]
             end
             local filename = state.imglist[i]--'COCO_train2014_000000000092'
-            local feat_visual = state.featureMap[filename]:clone()
 
             currBatch.word_idx[nSample_batch] = state.x_question[i]
             currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
-            currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+            currBatch.featBatch_visual[nSample_batch] = state.featureMap[filename]:clone()
                 
             while i == state.x_question:size(1) and nSample_batch< opt.batchsize do
                 -- padding the extra sample to complete a batch for training
                 nSample_batch = nSample_batch+1
                 currBatch.IDXset_batch[nSample_batch] = i
                 currBatch.target[nSample_batch] = first_answer
-                currBatch.featBatch_visual[nSample_batch] = feat_visual:clone()
+                currBatch.featBatch_visual[nSample_batch] = state.featureMap[filename]:clone()
                 currBatch.word_idx[nSample_batch] = state.x_question[i]
                 currBatch.seq_mask[nSample_batch] = state.x_seq_mask[i]
             end 
             if nSample_batch == opt.batchsize then                
+                if dataset.batches[nBatch] == nil then
+                    table.insert(dataset.batches, currBatch)
+                end
                 nBatch = nBatch+1
                 nSample_batch = 0
-                table.insert(dataset.batches, currBatch)
                 currBatch = nil
             end
         end
@@ -549,7 +567,7 @@ function make_batches(opt, state, manager_vocab, updateIDX)
         batch.seq_mask = batch.seq_mask:cuda()
     end
 
-    print(string.format('make_batches took: %.2f', os.clock() - start_time))
+    print(string.format('make_batches took: %.2f (%d batches)', os.clock() - start_time, #dataset.batches))
 
     return dataset
 end -- make_batches
