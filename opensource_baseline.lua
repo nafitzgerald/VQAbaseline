@@ -23,9 +23,14 @@ function build_model(opt, manager_vocab)
         model:add(nn.Linear(opt.vdim, manager_vocab.nvocab_answer))
     
     elseif opt.method == 'BOWIMG' then
+
         model = nn.Sequential()
-        local module_tdata = nn.Sequential():add(nn.SelectTable(1)):add(nn.LinearNB(manager_vocab.nvocab_question, opt.embed_word))
-        local module_vdata = nn.Sequential():add(nn.SelectTable(2))
+        local module_vdata = nn.Sequential():add(nn.SelectTable(1))
+        local replicatedMask = nn.Sequential():add(nn.SelectTable(2)):add(nn.Replicate(opt.embed_word,3))
+        local lookup = nn.Sequential():add(nn.SelectTable(3)):add(nn.LookupTable(manager_vocab.nvocab_question, opt.embed_word))
+        local cat2 = nn.ConcatTable():add(lookup):add(replicatedMask)
+        local module_tdata = nn.Sequential():add(cat2):add(nn.CMulTable()):add(nn.Sum(2)) --:add(nn.Tanh())
+
         local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
         model:add(cat):add(nn.JoinTable(2))
         model:add(nn.LinearNB(opt.embed_word + opt.vdim, manager_vocab.nvocab_answer))
@@ -56,6 +61,13 @@ function initial_params()
     cmd:option('--savetag', 'BOWIMG')
     cmd:option('--inputrep', 'question')
     cmd:option('--recoverfrom', '')
+    cmd:option('--runmode', 'train')
+    cmd:option('--trainval', 1)
+    cmd:option('--trainall', 0)
+    cmd:option('--inputmodel', '')
+    cmd:option('--resultdir', 'result')
+    cmd:option('--datapath', 'data/')
+    cmd:option('--constrainpred', 0)
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
@@ -73,6 +85,7 @@ function initial_params()
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
     cmd:option('--embed_word', 1024,'the word embedding dimension in baseline')
+    cmd:option('--test_during_train', 0, 'whether to compute train error')
 
     -- parameters for universal learning rate
     cmd:option('--maxgradnorm', 20)
@@ -97,10 +110,10 @@ function adjust_learning_rate(epoch_num, opt, config_layers)
 end
 
 function runTrainVal()
-    local method = 'BOWIMG'
-    local step_trainval = true --  step for train and valiaton
-    local step_trainall = false --  step for combining train2014 and val2014
     local opt = initial_params()
+    local method = 'BOWIMG'
+    local step_trainval = opt.trainval == 1 --  step for train and valiaton
+    local step_trainall = opt.trainall == 1 --  step for combining train2014 and val2014
     opt.method = method
     if opt.savetag == nil or opt.savetag == '' then
         opt.savetag = method .. '_' .. opt.inputrep
@@ -113,6 +126,9 @@ function runTrainVal()
     if step_trainval then 
         local state_train, manager_vocab = load_visualqadataset(opt, 'trainval2014_train', nil)
         local state_val, _ = load_visualqadataset(opt, 'trainval2014_val', manager_vocab)
+
+        --state_train.dataset = make_batches(opt, state_train, manager_vocab, 'train')
+        --state_val.dataset = make_batches(opt, state_val, manager_vocab, 'val')
 
 	local model, criterion, paramx, paramdx
         if opt.recoverfrom == nil or opt.recoverfrom == '' then
@@ -182,6 +198,7 @@ function runTrainVal()
         -- Combine train2014 and val2014
         local nEpoch_trainAll = nEpoch_best
         local state_train, manager_vocab = load_visualqadataset(opt, 'trainval2014', nil)
+        --state_train.dataset = make_batches(opt, state_train, manager_vocab, 'train')
         -- recreate the model  
         local model, criterion = build_model(opt, manager_vocab)
         local paramx, paramdx = model:getParameters()
@@ -223,9 +240,25 @@ function runTest()
     if opt.savetag == nil or opt.savetag == '' then
         opt.savetag = method .. '_' .. opt.inputrep
     end
-    local model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
-    local testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
-    --local testSet = 'trainval2014_val' --'test2015' and 'test-dev2015'
+    local model_path = nil
+    if opt.inputmodel == nil or opt.inputmodel == '' then
+        model_path = paths.concat(opt.savepath, opt.savetag .. '_BEST.t7')
+    else
+        model_path = opt.inputmodel
+    end
+    local testSet = nil
+    local updateIDX = 'test'
+    if opt.runmode == 'finaltest' then
+        testSet = 'test2015'
+    elseif opt.runmode == 'testval' then
+        updateIDX = 'val'
+        testSet = 'trainval2014_val'
+    elseif opt.runmode == 'testtrain' then
+        updateIDX = 'val' 
+        testSet = 'trainval2014_train'
+    else
+        testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
+    end
     opt.method = method
 
     -- load pre-trained model 
@@ -237,23 +270,32 @@ function runTest()
 
     -- load test data
     local state_test, _ = load_visualqadataset(opt, testSet, manager_vocab)
+    --state_test.dataset = make_batches(opt, state_test, manager_vocab, 'train')
 
     local context = {
         model = model,
         criterion = criterion,
     }
     -- predict 
-    local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
+    local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, updateIDX)
     
     -- output to csv file to be submitted to the VQA evaluation server
-    local file_json_openend = '/tmp/result/vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
-    local file_json_multiple = '/tmp/result/vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json'
+    local file_json_openend = paths.concat(opt.resultdir, 'vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
+    local file_json_multiple = paths.concat(opt.resultdir, 'vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
-    local choice = 1   
+    local choice = 0   
     outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice)
+    print('output the MultipleChoice prediction to JSON file...'..file_json_multiple) 
+    choice = 1
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_multiple, choice)
 
     collectgarbage()
 end
 
---runTrainVal()
-runTest()
+opt = initial_params() 
+if opt.runmode == 'train' then
+    runTrainVal()
+    runTest()
+else
+    runTest()
+end
