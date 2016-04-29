@@ -200,7 +200,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     else
         manager_vocab_ = manager_vocab
     end
-    
+
     local imglist = load_filelist(filename_imglist)
     local nSample = #imglist
     -- We can choose to run the first few answers.
@@ -493,7 +493,7 @@ function make_batches(opt, state, manager_vocab, updateIDX)
     local start_time = os.clock()
     local n = state.x_question:size(1)
     local randIDX = torch.randperm(n)
-    if updateIDX == 'test' then
+    if updateIDX == 'test' or updateIDX == 'val' then
         randIDX = torch.range(1, n)
     end
 
@@ -618,20 +618,22 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
             i_max = torch.squeeze(i_max)
             for j = 1, opt.batchsize do
                 local idx = batch.IDXset_batch[j]
-                local choices = stringx.split(state.data_choice[idx], ',')
-                local score_choices = torch.zeros(#choices):fill(-1000000)
-                for n = 1, #choices do
-                    local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
-                    if IDX_pred ~= nil then
-                        local score = prob_batch[{j, IDX_pred}]
-                        if score ~= nil then
-                            score_choices[n] = score
+                if idx <= state.x_question:size(1) then
+                    local choices = stringx.split(state.data_choice[idx], ',')
+                    local score_choices = torch.zeros(#choices):fill(-1000000)
+                    for n = 1, #choices do
+                        local IDX_pred = manager_vocab.vocab_map_answer[choices[n]]
+                        if IDX_pred ~= nil then
+                            local score = prob_batch[{j, IDX_pred}]
+                            if score ~= nil then
+                                score_choices[n] = score
+                            end
                         end
                     end
+                    local val_max, IDX_max = torch.max(score_choices, 1)
+                    pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
+                    pred_answer[idx] = i_max[j]
                 end
-                local val_max, IDX_max = torch.max(score_choices, 1)
-                pred_answer_multi[idx] = manager_vocab.vocab_map_answer[choices[IDX_max[1]]]
-                pred_answer[idx] = i_max[j]
             end
         end
 

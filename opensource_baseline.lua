@@ -246,10 +246,15 @@ function runTest()
         model_path = opt.inputmodel
     end
     local testSet = nil
+    local updateIDX = 'test'
     if opt.runmode == 'finaltest' then
         testSet = 'test2015'
     elseif opt.runmode == 'testval' then
+        updateIDX = 'val'
         testSet = 'trainval2014_val'
+    elseif opt.runmode == 'testtrain' then
+        updateIDX = 'val' 
+        testSet = 'trainval2014_train'
     else
         testSet = 'test-dev2015' --'test2015' and 'test-dev2015'
     end
@@ -271,7 +276,7 @@ function runTest()
         criterion = criterion,
     }
     -- predict 
-    local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, 'test')
+    local pred, pred_multi, perfs = train_epoch(opt, state_test, manager_vocab, context, updateIDX)
     
     -- output to csv file to be submitted to the VQA evaluation server
     local file_json_openend = paths.concat(opt.resultdir, 'vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
