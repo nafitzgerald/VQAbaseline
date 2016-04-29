@@ -1,5 +1,10 @@
-data/
+result/results_BOWIMG.zip
+data*
 model/
 logs/
 result/
 train_scripts/
+runfiles/
+visModels/
+*.swp
+*.zip
