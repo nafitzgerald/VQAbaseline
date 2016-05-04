@@ -1,3 +1,4 @@
+require 'loadcaffe'
 require 'paths'
 require 'cunn'
 require 'nn'
@@ -25,7 +26,21 @@ function build_model(opt, manager_vocab)
     elseif opt.method == 'BOWIMG' then
 
         model = nn.Sequential()
-        local module_vdata = nn.Sequential():add(nn.SelectTable(1))
+
+        local module_vdata = nil
+        local vdim = nil
+        if opt.trainvgg == 1 then
+            vgg = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
+            vgg:remove()
+            vgg:remove()
+            module_vdata = nn.Sequential():add(nn.SelectTable(1)):add(vgg)
+            vdim = 4096
+        else
+            module_vdata = nn.Sequential():add(nn.SelectTable(1))
+            vdim = opt.vdim
+        end
+
+
         local replicatedMask = nn.Sequential():add(nn.SelectTable(2)):add(nn.Replicate(opt.embed_word,3))
         local lookup = nn.Sequential():add(nn.SelectTable(3)):add(nn.LookupTable(manager_vocab.nvocab_question, opt.embed_word))
         local cat2 = nn.ConcatTable():add(lookup):add(replicatedMask)
@@ -33,11 +48,10 @@ function build_model(opt, manager_vocab)
 
         local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
         model:add(cat):add(nn.JoinTable(2))
-        model:add(nn.LinearNB(opt.embed_word + opt.vdim, manager_vocab.nvocab_answer))
+        model:add(nn.LinearNB(opt.embed_word + vdim, manager_vocab.nvocab_answer))
 
     else
         print('no such methods')
-
     end
 
     model:add(nn.LogSoftMax())
@@ -47,6 +61,24 @@ function build_model(opt, manager_vocab)
     criterion:cuda()
 
     return model, criterion
+end
+
+function get_vgg_module()
+        vgg = loadcaffe.load('visModels/VGG_ILSVRC_16_layers_deploy.prototxt', 'visModels/VGG_ILSVRC_16_layers.caffemodel')
+        vgg:remove()
+        vgg:remove()
+        module_vdata = nn.Sequential():add(nn.SelectTable(1)):add(vgg)
+        return module_vdata
+end
+
+function add_vgg(model)
+    module_tdata = model:get(1):get(1)
+    module_vdata = get_vgg_module()
+    local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
+    model:remove(1)
+    model:insert(cat, 1)
+    model:cuda()
+    return model
 end
 
 function initial_params()
@@ -66,12 +98,17 @@ function initial_params()
     cmd:option('--trainall', 0)
     cmd:option('--inputmodel', '')
     cmd:option('--resultdir', 'result')
+<<<<<<< HEAD
     cmd:option('--datapath', 'data/')
     cmd:option('--constrainpred', 0)
+=======
+    cmd:option('--path_dataset', 'data/')
+>>>>>>> addVision
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
     cmd:option('--vdim', 1024)
+    cmd:option('--trainvgg', 0)
 
     -- parameters for data pre-process
     cmd:option('--thresh_questionword',6, 'threshold for the word freq on question')
@@ -138,9 +175,16 @@ function runTrainVal()
             print("Recovering from: " .. opt.recoverfrom)
             local f_model = torch.load(opt.recoverfrom)
             manager_vocab = f_model.manager_vocab 
+            local old_train = opt.trainvgg
+            opt.trainvgg = 0
             model, criterion = build_model(opt, manager_vocab)
             paramx, paramdx = model:getParameters()
             paramx:copy(f_model.paramx)
+            opt.trainvgg = old_train
+
+            if opt.trainvgg == 1 then
+                model = add_vgg(model)
+            end
         end
         local params_current, gparams_current = model:parameters()
 
