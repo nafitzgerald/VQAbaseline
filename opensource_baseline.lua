@@ -98,12 +98,8 @@ function initial_params()
     cmd:option('--trainall', 0)
     cmd:option('--inputmodel', '')
     cmd:option('--resultdir', 'result')
-<<<<<<< HEAD
     cmd:option('--datapath', 'data/')
     cmd:option('--constrainpred', 0)
-=======
-    cmd:option('--path_dataset', 'data/')
->>>>>>> addVision
 
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
