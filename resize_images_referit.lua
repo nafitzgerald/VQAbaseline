@@ -8,7 +8,7 @@ local stringx = require 'pl.stringx'
 local debugger = require 'fb.debugger'
 
 
-local resize_to = 448
+local resize_to = 512
 
 function do_dir(indir, outdir)
     print ("DOING " .. indir)
@@ -17,23 +17,33 @@ function do_dir(indir, outdir)
         i = i + 1
         print(i)
         if stringx.endswith(file, '.jpg') then
+            print(file)
             local filename = paths.concat(indir, file)
-            local im = image.load(filename)
-            local size = im:size()
-            crop_to = math.min(size[2], size[3])
-            cropped = image.crop(im, "c", crop_to, crop_to)
+            local im = nill
+            if pcall(function () im = image.load(filename) end) then
+                local size = im:size()
 
-            if cropped:size()[1] == 1 then
-                cropped = torch.repeatTensor(cropped, 3, 1, 1)
+                if im:size()[1] == 1 then
+                    im = torch.repeatTensor(im, 3, 1, 1)
+                end
+
+                scaled = image.scale(im, resize_to)
+                ssize = scaled:size()
+
+                padded = torch.zeros(3, resize_to, resize_to)
+                if ssize[2] < resize_to then
+                    start = 1 + (resize_to - ssize[2])/2
+                    padded:narrow(2,start,ssize[2]):copy(scaled)
+                else
+                    start = 1 + (resize_to - ssize[3])/2
+                    padded:narrow(3, start, ssize[3]):copy(scaled)
+                end
+
+                name = stringx.split(file, '.')
+
+                path = paths.concat(outdir, name[1] .. '_cropped.jpg')
+                image.save(path, padded)
             end
-
-            scaled = torch.Tensor(3, resize_to, resize_to)
-            scaled = image.scale(scaled, cropped)
-
-            name = stringx.split(file, '.')
-
-            path = paths.concat(outdir, name[1] .. '_cropped.jpg')
-            image.save(path, scaled)
         end
     end
 end
@@ -91,17 +101,13 @@ function cache_vgg(indir, outdir, mean)
 end
 
 
-local indir = "/home/nfitz/hdd2/data/VQA/images/test2015/test2015"
-local outdir = "/home/nfitz/hdd2/data/VQA/images/VGG16_448/test2015/cropped/"
---do_dir(indir, outdir)
-
-local indir = "/home/nfitz/hdd2/data/VQA/images/train2014"
-local outdir = "/home/nfitz/hdd2/data/VQA/images/VGG16_448/train2014/cropped/"
---do_dir(indir, outdir)
-
-local indir = "/home/nfitz/hdd2/data/VQA/images/val2014/val2014"
-local outdir = "/home/nfitz/hdd2/data/VQA/images/VGG16_448/val2014/cropped/"
---do_dir(indir, outdir)
+--for i = 0, 40 do
+for i = 30, 40 do
+    local indir = string.format("/home/nfitz/hdd2/data/ReferitData/Images/benchmark/saiapr_tc-12/%02d/images", i)
+    local outdir = string.format("/home/nfitz/hdd2/data/ReferitData/images_cropped/")
+    do_dir(indir, outdir)
+end
+os.exit()
 
 local mean = torch.Tensor{103.939, 116.779, 123.68}
 mean:resize(3,1,1)
