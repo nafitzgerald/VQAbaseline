@@ -117,8 +117,8 @@ end
 function adjust_learning_rate(epoch_num, opt, config_layers)
     -- Every opt.nepoch_lr iterations, the learning rate is reduced.
     if epoch_num % opt.nepoch_lr == 0 then
-        for j = 1, #config_layers.lr_rates do
-            config_layers.lr_rates[j] = config_layers.lr_rates[j] / opt.decay
+        for j = 1, #config_layers.lr do
+            config_layers.lr[j] = config_layers.lr[j] / opt.decay
         end
     end
 end
@@ -159,26 +159,19 @@ function runTrainVal()
         local params_current, gparams_current = model:parameters()
 
         -- Save variables into context so that train_epoch could use.
+        local config_layers = config_layer_params(opt, params_current, gparams_current, 1)
         local context = {
             model = model,
             criterion = criterion,
             paramx = paramx,
             paramdx = paramdx,
             params_current = params_current, 
-            gparams_current = gparams_current
+            gparams_current = gparams_current,
+            config_layers = config_layers
         }
-        if opt.optim == 'momentum' then
-            local config_layers, grad_last = config_layer_params(opt, params_current, gparams_current, 1)
-            context.config_layers = config_layers
-            context.grad_last = grad_last
-        elseif opt.optim == 'adam' then
+       if opt.optim == 'adam' then
             context.num_updates = 0
-            context.m = torch.zeros(paramx:size()):cuda()
-            context.v = torch.zeros(paramx:size()):cuda()
-            context.buffer = torch.zeros(paramx:size()):cuda()
         end
-
-
 
         print(params_current)
     local best_score = 0
@@ -227,7 +220,7 @@ function runTrainVal()
         local paramx, paramdx = model:getParameters()
         local params_current, gparams_current = model:parameters()
 
-        local config_layers, grad_last = config_layer_params(opt, params_current, gparams_current, 1)
+        local config_layers = config_layer_params(opt, params_current, gparams_current, 1)
 
         local context = {
             model = model,
@@ -236,8 +229,7 @@ function runTrainVal()
             paramdx = paramdx,
             params_current = params_current, 
             gparams_current = gparams_current,
-            config_layers = config_layers,
-            grad_last = grad_last
+            config_layers = config_layers
         }
         print(params_current)
         

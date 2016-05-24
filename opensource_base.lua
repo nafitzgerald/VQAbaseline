@@ -34,7 +34,7 @@ function config_layer_params(opt, params_current, gparams_current, IDX_wordembed
 
     -- Initialize specification of layers.
     local config_layers = {
-        lr_rates = {},
+        lr = {},
         gradientClips = {},
         weightClips = {},
         moments = {},
@@ -43,27 +43,44 @@ function config_layer_params(opt, params_current, gparams_current, IDX_wordembed
     }
 
     -- grad_last is used to add momentum to the gradient.
-    local grad_last = {}
     if IDX_wordembed == 1 then
         -- assume wordembed matrix is the params_current[1]
-        config_layers.lr_rates = {lr_wordembed}
-        config_layers.gradientClips = {gradientClip_dummy}
-        config_layers.weightClips = {weightClip_wordembed}
-        config_layers.moments = {moments_dummy}
-        config_layers.weightRegConsts = {weightRegConsts_dummy}
-        config_layers.initialRange = {initialRange_dummy}
+        config_layers.lr = {lr_wordembed}
         for i = 2, #params_current do
-            table.insert(config_layers.lr_rates, lr_other)
-            table.insert(config_layers.moments, moments_dummy)
-            table.insert(config_layers.gradientClips, gradientClip_dummy)
-            table.insert(config_layers.weightClips, weightClip_other)
-            table.insert(config_layers.weightRegConsts, weightRegConsts_dummy)
-            table.insert(config_layers.initialRange, initialRange_dummy)    
+            table.insert(config_layers.lr, lr_other)
         end
 
+        if opt.optim == 'momentum' then
+            config_layers.grad_last = {gparams_current[1]:clone():fill(0)}
+            config_layers.gradientClips = {gradientClip_dummy}
+            config_layers.weightClips = {weightClip_wordembed}
+            config_layers.moments = {moments_dummy}
+            config_layers.weightRegConsts = {weightRegConsts_dummy}
+            config_layers.initialRange = {initialRange_dummy}
+            for i = 2, #params_current do
+                table.insert(config_layers.grad_last, gparams_current[i]:clone():fill(0))
+                table.insert(config_layers.moments, moments_dummy)
+                table.insert(config_layers.gradientClips, gradientClip_dummy)
+                table.insert(config_layers.weightClips, weightClip_other)
+                table.insert(config_layers.weightRegConsts, weightRegConsts_dummy)
+                table.insert(config_layers.initialRange, initialRange_dummy)    
+            end
+        elseif opt.optim == 'adam' then
+            config_layers.m = {torch.zeros(params_current[1]:size()):cuda()}
+            config_layers.v = {torch.zeros(params_current[1]:size()):cuda()}
+            config_layers.buffer = {torch.zeros(params_current[1]:size()):cuda()}
+            for i = 2, #params_current do
+                table.insert(config_layers.m, torch.zeros(params_current[i]:size()):cuda())
+                table.insert(config_layers.v, torch.zeros(params_current[i]:size()):cuda())
+                table.insert(config_layers.buffer, torch.zeros(params_current[i]:size()):cuda())
+            end
+        else
+            print ('Optimization ' .. opt.optim .. ' not recognized')
+            os.exit()
+        end
     else
         for i = 1, #params_current do
-            table.insert(config_layers.lr_rates, lr_other)
+            table.insert(config_layers.lr, lr_other)
             table.insert(config_layers.moments, moments_dummy)
             table.insert(config_layers.gradientClips, gradientClip_dummy)
             table.insert(config_layers.weightClips, weightClip_other)
@@ -72,11 +89,7 @@ function config_layer_params(opt, params_current, gparams_current, IDX_wordembed
         end
     end
 
-    for i=1, #gparams_current do
-        grad_last[i] = gparams_current[i]:clone()
-        grad_last[i]:fill(0)
-    end
-    return config_layers, grad_last
+    return config_layers
 end
 
 ---------------------------------------
@@ -628,7 +641,6 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
     local params_current = context.params_current
     local gparams_current = context.gparams_current
     local config_layers = context.config_layers
-    local grad_last = context.grad_last
  
     local loss = 0.0
     local batch_loss = 0.0
@@ -724,12 +736,12 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
                         gparams_current[i]:mul(config_layers.gradientClips[i]/gnorm)
                     end
 
-                    grad_last[i]:mul(config_layers.moments[i])
-                    local tmp = torch.mul(gparams_current[i],-config_layers.lr_rates[i])
-                    grad_last[i]:add(tmp)
-                    params_current[i]:add(grad_last[i])
+                    config_layers.grad_last[i]:mul(config_layers.moments[i])
+                    local tmp = torch.mul(gparams_current[i],-config_layers.lr[i])
+                    config_layers.grad_last[i]:add(tmp)
+                    params_current[i]:add(config_layers.grad_last[i])
                     if config_layers.weightRegConsts[i]>0 then
-                        local a = config_layers.lr_rates[i] * config_layers.weightRegConsts[i]
+                        local a = config_layers.lr[i] * config_layers.weightRegConsts[i]
                         params_current[i]:mul(1-a)
                     end
                     local pnorm = params_current[i]:norm()
@@ -740,30 +752,32 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
             elseif opt.optim == 'adam' then
                 context.num_updates = context.num_updates + 1
                 local t = context.num_updates
-                local m = context.m
-                local v = context.v
-                local buffer = context.buffer
                 local b1 = opt.adam_b1
                 local b2 = opt.adam_b2
-                local lr = opt.adam_lr
                 local e = opt.adam_e
+                for i = 1, #params_current do
+                    local m = config_layers.m[i]
+                    local v = config_layers.v[i]
+                    local buffer = config_layers.buffer[i]
+                    local lr = config_layers.lr[i]
 
-                m:mul(b1)
-                m:add(1 - b1, paramdx)
+                    m:mul(b1)
+                    m:add(1 - b1, gparams_current[i])
 
-                v:mul(b2)
-                torch.pow(buffer, paramdx, 2)
-                v:add(1 - b2, buffer)
+                    v:mul(b2)
+                    torch.pow(buffer, gparams_current[i], 2)
+                    v:add(1 - b2, buffer)
 
-                buffer:copy(v)
-                buffer:div(1 - b2^t)
-                buffer:sqrt()
-                buffer:add(e)
-                buffer:cinv()
-                buffer:cmul(m)
-                buffer:div(1 - b1^t)
+                    buffer:copy(v)
+                    buffer:div(1 - b2^t)
+                    buffer:sqrt()
+                    buffer:add(e)
+                    buffer:cinv()
+                    buffer:cmul(m)
+                    buffer:div(1 - b1^t)
 
-                paramx:add(-lr, buffer)
+                    params_current[i]:add(-lr, buffer)
+                end
             elseif opt.optim == 'uniform' then
                 local norm_dw = paramdx:norm()
                 if norm_dw > opt.max_gradientnorm then
