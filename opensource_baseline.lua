@@ -33,6 +33,11 @@ function build_model(opt, manager_vocab)
 
         local cat = nn.ConcatTable():add(module_tdata):add(module_vdata)
         model:add(cat):add(nn.JoinTable(2))
+
+        if opt.dropout == 1 then
+            model:add(nn.Dropout())
+        end
+
         model:add(nn.LinearNB(opt.embed_word + opt.vdim, manager_vocab.nvocab_answer))
 
     else
@@ -72,6 +77,7 @@ function initial_params()
     -- parameters for the visual feature
     cmd:option('--vfeat', 'googlenetFC')
     cmd:option('--vdim', 1024)
+    cmd:option('--l2vis', 0)
 
     -- parameters for data pre-process
     cmd:option('--thresh_questionword',6, 'threshold for the word freq on question')
@@ -86,6 +92,7 @@ function initial_params()
     cmd:option('--decay', 1.2)
     cmd:option('--embed_word', 1024,'the word embedding dimension in baseline')
     cmd:option('--test_during_train', 0, 'whether to compute train error')
+    cmd:option('--dropout', 0)
 
     -- parameters for universal learning rate
     cmd:option('--maxgradnorm', 20)
@@ -168,7 +175,7 @@ function runTrainVal()
             stat[i] = {acc, perfs.most_freq, perfs.openend_overall, perfs.multiple_overall}
             -- Adjust the learning rate 
             adjust_learning_rate(i, opt, config_layers)
-            local score = perfs.openend_overall
+            local score = perfs.openend_overall_filtered
             if score > best_score then
                 print('Saving best model (epoch ' .. i .. ') - Acc: ' .. score)
                 save_model(opt, manager_vocab, context, best_model_save_path)
@@ -281,13 +288,18 @@ function runTest()
     
     -- output to csv file to be submitted to the VQA evaluation server
     local file_json_openend = paths.concat(opt.resultdir, 'vqa_OpenEnded_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
+    local file_json_openend_filter = paths.concat(opt.resultdir, 'vqa_OpenEndedFiltered_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
     local file_json_multiple = paths.concat(opt.resultdir, 'vqa_MultipleChoice_mscoco_' .. testSet .. '_'.. opt.savetag .. '_results.json')
     print('output the OpenEnd prediction to JSON file...'..file_json_openend) 
     local choice = 0   
-    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice)
+    local filter = 0
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend, choice, filter)
     print('output the MultipleChoice prediction to JSON file...'..file_json_multiple) 
     choice = 1
-    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_multiple, choice)
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_multiple, choice, filter)
+    choice = 0
+    filter = 1
+    outputJSONanswer(state_test, manager_vocab, pred, pred_multi, file_json_openend_filter, choice, filter)
 
     collectgarbage()
 end

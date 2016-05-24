@@ -155,7 +155,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     local filename_allanswer = paths.concat(path_dataset, prefix .. '_allanswer.txt')
     local filename_choice = paths.concat(path_dataset, prefix .. '_choice.txt')
     local filename_choice_tag = paths.concat(path_dataset, prefix .. '_choice_tag.txt')
-    local filename_choice_map = paths.concat(path_dataset, prefix .. '_choice_map.txt')
+    local filename_choice_map = paths.concat(path_dataset, 'choice_map.txt')
     local filename_question_type = paths.concat(path_dataset, prefix .. '_question_type.txt')
     local filename_answer_type = paths.concat(path_dataset, prefix .. '_answer_type.txt')
     local filename_questionID = paths.concat(path_dataset, prefix .. '_questionID.txt')
@@ -333,6 +333,9 @@ function load_visualqadataset(opt, dataType, manager_vocab)
             local featureSet = torch.load(feature_prefix ..'_feat.dat')
             for i = 1, #feature_imglist do
                 local feat_in = torch.squeeze(featureSet[i])
+                if opt.l2vis == 1 then
+                    feat_in:div(feat_in:norm())
+                end
                 featureMap[feature_imglist[i]] = feat_in
             end
         end
@@ -458,12 +461,15 @@ function evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi, s
                 count_curr_multiple = count_curr_multiple + (word_pred_answer_multiple == answers[j] and 1 or 0)
             end
 
-            local increment = math.min(count_curr_openend * 1.0/3, 1.0)
+            local increment = get_increment(count_curr_openend)
             add_count(perfs, "openend_overall", increment, 
                              "openend_q_" .. question_type, increment, 
                              "openend_a_" .. answer_type, increment)
+            if pred_answer[i] > 0 then
+                add_count(perfs, "openend_overall_filtered", increment)
+            end
 
-            increment = math.min(count_curr_multiple * 1.0/3, 1.0)
+            increment = get_increment(count_curr_multiple)
             add_count(perfs, "multiple_overall", increment, 
                              "multiple_q_" .. question_type, increment, 
                              "multiple_a_" .. answer_type, increment)
@@ -474,23 +480,41 @@ function evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi, s
     return compute_accuracy(perfs)
 end
 
-function outputJSONanswer(state, manager_vocab, pred, pred_multi, file_json, choice)
+function get_increment(count)
+    if count == 0 then
+        return 0.0
+    elseif count == 1 then
+        return 0.3
+    elseif count == 2 then
+        return 0.6
+    elseif count == 3 then
+        return 0.9
+    elseif count >= 4 then
+        return 1.0
+    end
+end
+
+function outputJSONanswer(state, manager_vocab, pred, pred_multi, file_json, choice, filter)
     -- Dump the prediction result to csv file
     local f_json = io.open(file_json,'w')
     f_json:write('[')
     
     for i = 1, pred:size(1) do
-        local word_pred_answer_multiple = manager_vocab.ivocab_map_answer[pred_multi[i]]
-        local word_pred_answer_openend = manager_vocab.ivocab_map_answer[pred[i]]
-        local answer_pred = word_pred_answer_openend
-        if choice == 1 then
-            answer_pred = word_pred_answer_multiple
-        end
-    
-        local questionID = state.data_questionID[i]
-        f_json:write('{"answer": "' .. answer_pred .. '","question_id": ' .. questionID .. '}')
-        if i< pred:size(1) then
-            f_json:write(',')
+        if state.x_seq_length[i] > 0 or filter == 0 then
+            local word_pred_answer_multiple = manager_vocab.ivocab_map_answer[pred_multi[i]]
+            local word_pred_answer_openend = manager_vocab.ivocab_map_answer[pred[i]]
+            local answer_pred = word_pred_answer_openend
+            if choice == 1 then
+                answer_pred = word_pred_answer_multiple
+            end
+
+            if answer_pred ~= nil then
+                local questionID = state.data_questionID[i]
+                f_json:write('{"answer": "' .. answer_pred .. '","question_id": ' .. questionID .. '}')
+                if i< pred:size(1) then
+                    f_json:write(',')
+                end
+            end
         end
     end
     f_json:write(']')
@@ -540,12 +564,15 @@ function make_batches(opt, state, manager_vocab, updateIDX)
 
         local i = randIDX[iii]
 
+        local seq_length = state.x_seq_length[i]
         local first_answer = -1
         if updateIDX~='test' then
             first_answer = state.x_answer[i]
         end
         if first_answer == -1 and updateIDX == 'train' then
             --skip the sample with NA answer
+        elseif seq_length == 0 then
+            --skip the sampel with NA answer
         else
             nSample_batch = nSample_batch + 1
             currBatch.IDXset_batch[nSample_batch] = i
@@ -750,6 +777,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
             perfs = evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi)
             print(updateIDX .. ': acc.match mostfreq = ' .. perfs.most_freq)
             print(updateIDX .. ': acc.dataset (OpenEnd) =' .. perfs.openend_overall)
+            print(updateIDX .. ': acc.dataset (OpenEndFiltered) =' .. perfs.openend_overall_filtered)
             print(updateIDX .. ': acc.dataset (MultipleChoice) =' .. perfs.multiple_overall)
             -- If you want to see more statistics. do the following:
             -- print(perfs)
