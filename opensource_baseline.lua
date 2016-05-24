@@ -98,6 +98,8 @@ function initial_params()
     cmd:option('--adam_b2', 0.999)
     cmd:option('--adam_e', 1e-8)
     cmd:option('--adam_lr', 0.001)
+    cmd:option('--l2reg', 0)
+    cmd:option('--reg', 1e-4)
 
     -- parameters for universal learning rate
     cmd:option('--maxgradnorm', 20)

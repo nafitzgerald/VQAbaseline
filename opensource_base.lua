@@ -712,6 +712,10 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
             local df = criterion:backward(output, batch.target)
             local df_model = model:backward(input, df)
 
+            if opt.l2reg == 1 then
+                paramdx:add(opt.reg, paramx)
+            end
+
             -------------Update the params of baseline softmax---
             if opt.optim == 'momentum' then
                 for i=1, #params_current do
