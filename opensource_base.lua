@@ -713,7 +713,7 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
             local df_model = model:backward(input, df)
 
             -------------Update the params of baseline softmax---
-            if opt.uniformLR ~= 1 then
+            if opt.optim == 'momentum' then
                 for i=1, #params_current do
                     local gnorm = gparams_current[i]:norm()
                     if config_layers.gradientClips[i]>0 and gnorm > config_layers.gradientClips[i] then
@@ -733,13 +733,42 @@ function train_epoch(opt, state, manager_vocab, context, updateIDX)
                         params_current[i]:mul(config_layers.weightClips[i]/pnorm)
                     end
                 end
-            else
+            elseif opt.optim == 'adam' then
+                context.num_updates = context.num_updates + 1
+                local t = context.num_updates
+                local m = context.m
+                local v = context.v
+                local buffer = context.buffer
+                local b1 = opt.adam_b1
+                local b2 = opt.adam_b2
+                local lr = opt.adam_lr
+                local e = opt.adam_e
+
+                m:mul(b1)
+                m:add(1 - b1, paramdx)
+
+                v:mul(b2)
+                torch.pow(buffer, paramdx, 2)
+                v:add(1 - b2, buffer)
+
+                buffer:copy(v)
+                buffer:div(1 - b2^t)
+                buffer:sqrt()
+                buffer:add(e)
+                buffer:cinv()
+                buffer:cmul(m)
+                buffer:div(1 - b1^t)
+
+                paramx:add(-lr, buffer)
+            elseif opt.optim == 'uniform' then
                 local norm_dw = paramdx:norm()
                 if norm_dw > opt.max_gradientnorm then
                     local shrink_factor = opt.max_gradientnorm / norm_dw
                     paramdx:mul(shrink_factor)
                 end
                 paramx:add(g_paramdx:mul(-opt.lr))
+            else
+                print('Optimization method ' .. opt.optim .. ' not recognized.')
             end
 
         end

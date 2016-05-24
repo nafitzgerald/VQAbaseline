@@ -86,13 +86,18 @@ function initial_params()
     cmd:option('--seq_length', 50)
 
     -- parameters for learning
-    cmd:option('--uniformLR', 0, 'whether to use uniform learning rate for all the parameters')
+    cmd:option('--optim', 'momentum', 'optimization method')
     cmd:option('--epochs', 100)
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
     cmd:option('--embed_word', 1024,'the word embedding dimension in baseline')
     cmd:option('--test_during_train', 0, 'whether to compute train error')
     cmd:option('--dropout', 0)
+
+    cmd:option('--adam_b1', 0.9)
+    cmd:option('--adam_b2', 0.999)
+    cmd:option('--adam_e', 1e-8)
+    cmd:option('--adam_lr', 0.001)
 
     -- parameters for universal learning rate
     cmd:option('--maxgradnorm', 20)
@@ -151,19 +156,28 @@ function runTrainVal()
         end
         local params_current, gparams_current = model:parameters()
 
-        local config_layers, grad_last = config_layer_params(opt, params_current, gparams_current, 1)
-
-    -- Save variables into context so that train_epoch could use.
+        -- Save variables into context so that train_epoch could use.
         local context = {
             model = model,
             criterion = criterion,
             paramx = paramx,
             paramdx = paramdx,
             params_current = params_current, 
-            gparams_current = gparams_current,
-            config_layers = config_layers,
-            grad_last = grad_last
+            gparams_current = gparams_current
         }
+        if opt.optim == 'momentum' then
+            local config_layers, grad_last = config_layer_params(opt, params_current, gparams_current, 1)
+            context.config_layers = config_layers
+            context.grad_last = grad_last
+        elseif opt.optim == 'adam' then
+            context.num_updates = 0
+            context.m = torch.zeros(paramx:size()):cuda()
+            context.v = torch.zeros(paramx:size()):cuda()
+            context.buffer = torch.zeros(paramx:size()):cuda()
+        end
+
+
+
         print(params_current)
     local best_score = 0
         print('start training ...')
