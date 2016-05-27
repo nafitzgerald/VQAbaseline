@@ -72,6 +72,7 @@ function initial_params()
     cmd:option('--inputmodel', '')
     cmd:option('--resultdir', 'result')
     cmd:option('--datapath', 'data/')
+    cmd:option('--imagepath', 'data/')
     cmd:option('--constrainpred', 0)
 
     -- parameters for the visual feature

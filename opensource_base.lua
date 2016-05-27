@@ -149,6 +149,7 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     -- VQA question/answer txt files.
     -- Download data_vqa_feat.zip and data_vqa_txt.zip and decompress into this folder
     local path_dataset = opt.datapath
+    local path_imagedata = opt.imagepath
     
     local prefix = 'coco_' .. dataType 
     local filename_question = paths.concat(path_dataset, prefix .. '_' .. opt.inputrep .. '.txt')
@@ -323,9 +324,9 @@ function load_visualqadataset(opt, dataType, manager_vocab)
     }
     loading_spec['test-dev2015'] = { train = false, val = false, test = true }
     local feature_prefixSet = {
-        train = paths.concat(path_dataset, 'coco_train2014_' .. featName), 
-        val = paths.concat(path_dataset, 'coco_val2014_' .. featName),
-        test = paths.concat(path_dataset,'coco_test2015_' .. featName)
+        train = paths.concat(path_imagedata, 'coco_train2014_' .. featName), 
+        val = paths.concat(path_imagedata, 'coco_val2014_' .. featName),
+        test = paths.concat(path_imagedata,'coco_test2015_' .. featName)
     }
 
     for k, feature_prefix in pairs(feature_prefixSet) do
@@ -446,7 +447,7 @@ function evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi, s
 
         -- Estimate using the standard criteria (min(#correct match/3, 1))
         -- Also estimate the mutiple choice case.
-        local question_type = state.data_question_type[i]
+        --local question_type = state.data_question_type[i]
         local answer_type = state.data_answer_type[i]
 
         local word_pred_answer_multiple = manager_vocab.ivocab_map_answer[pred_answer_multi[i]]
@@ -465,7 +466,7 @@ function evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi, s
 
             local increment = get_increment(count_curr_openend)
             add_count(perfs, "openend_overall", increment, 
-                             "openend_q_" .. question_type, increment, 
+                             --"openend_q_" .. question_type, increment, 
                              "openend_a_" .. answer_type, increment)
             if pred_answer[i] > 0 then
                 add_count(perfs, "openend_overall_filtered", increment)
@@ -473,7 +474,7 @@ function evaluate_answer(state, manager_vocab, pred_answer, pred_answer_multi, s
 
             increment = get_increment(count_curr_multiple)
             add_count(perfs, "multiple_overall", increment, 
-                             "multiple_q_" .. question_type, increment, 
+                             --"multiple_q_" .. question_type, increment, 
                              "multiple_a_" .. answer_type, increment)
         end
     end
