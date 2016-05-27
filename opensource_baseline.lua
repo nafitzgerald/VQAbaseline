@@ -87,6 +87,7 @@ function initial_params()
 
     -- parameters for learning
     cmd:option('--epochs', 100)
+    cmd:option('--early_stopping', 20)
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
     cmd:option('--embed_word', 1024,'the word embedding dimension in baseline')
@@ -174,7 +175,8 @@ function runTrainVal()
         }
 
         print(params_current)
-    local best_score = 0
+        local best_score = 0
+        local epochs_since_improvement = 0
         print('start training ...')
         for i = 1, opt.epochs do
             print(method .. ' epoch '..i)
@@ -189,6 +191,14 @@ function runTrainVal()
                 print('Saving best model (epoch ' .. i .. ') - Acc: ' .. score)
                 save_model(opt, manager_vocab, context, best_model_save_path)
                 best_score = score
+                epochs_since_improvement = 0
+            else
+                epochs_since_improvement = epochs_since_improvement + 1
+                print('No improvement in ' .. epochs_since_improvement .. ' epochs')
+            end
+
+            if epochs_since_improvement >= opt.early_stopping then
+                break
             end
         end
     end
