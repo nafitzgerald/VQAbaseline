@@ -86,7 +86,6 @@ function initial_params()
     cmd:option('--seq_length', 50)
 
     -- parameters for learning
-    cmd:option('--optim', 'momentum', 'optimization method')
     cmd:option('--epochs', 100)
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
@@ -97,8 +96,8 @@ function initial_params()
     cmd:option('--adam_b1', 0.9)
     cmd:option('--adam_b2', 0.999)
     cmd:option('--adam_e', 1e-8)
-    cmd:option('--adam_lr', 0.001)
-    cmd:option('--l2reg', 0)
+    cmd:option('--l2reg_wordembed', 0)
+    cmd:option('--l2reg_other', 0)
     cmd:option('--reg', 1e-4)
 
     -- parameters for universal learning rate
@@ -106,6 +105,8 @@ function initial_params()
     cmd:option('--maxweightnorm', 2000)
 
     -- parameters for different learning rates for different layers
+    cmd:option('--optim_wordembed', 'momentum', 'optimization method')
+    cmd:option('--optim_other', 'momentum', 'optimization method')
     cmd:option('--lr_wordembed', 0.8)
     cmd:option('--lr_other', 0.01)
     cmd:option('--weightClip_wordembed', 1500)
@@ -117,8 +118,8 @@ end
 function adjust_learning_rate(epoch_num, opt, config_layers)
     -- Every opt.nepoch_lr iterations, the learning rate is reduced.
     if epoch_num % opt.nepoch_lr == 0 then
-        for j = 1, #config_layers.lr do
-            config_layers.lr[j] = config_layers.lr[j] / opt.decay
+        for j = 1, #config_layers do
+            config_layers[i].lr = config_layers[i].lr / opt.decay
         end
     end
 end
@@ -160,6 +161,7 @@ function runTrainVal()
 
         -- Save variables into context so that train_epoch could use.
         local config_layers = config_layer_params(opt, params_current, gparams_current, 1)
+        print(config_layers)
         local context = {
             model = model,
             criterion = criterion,
@@ -167,11 +169,9 @@ function runTrainVal()
             paramdx = paramdx,
             params_current = params_current, 
             gparams_current = gparams_current,
-            config_layers = config_layers
+            config_layers = config_layers,
+            num_updates = 0
         }
-       if opt.optim == 'adam' then
-            context.num_updates = 0
-        end
 
         print(params_current)
     local best_score = 0
