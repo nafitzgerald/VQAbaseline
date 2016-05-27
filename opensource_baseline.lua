@@ -87,7 +87,7 @@ function initial_params()
     cmd:option('--seq_length', 50)
 
     -- parameters for learning
-    cmd:option('--epochs', 100)
+    cmd:option('--epochs', 256)
     cmd:option('--early_stopping', 20)
     cmd:option('--nepoch_lr', 100)
     cmd:option('--decay', 1.2)
